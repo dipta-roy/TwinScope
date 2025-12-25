@@ -1,0 +1,4 @@
+syntax_highlighter.py
+toolbar_widgets.py
+collapsible_panel.py
+main.py
