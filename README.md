@@ -74,7 +74,7 @@ TwinScope is a cross-platform file and folder comparison tool inspired by Beyond
 
 ```bash
 # Clone the repository
-git clone https://github.com/dipta-roy/TwinScope_v1.0.git
+git clone https://github.com/dipta-roy/TwinScope.git
 cd TwinScope_v1.0
 
 # Create and activate a virtual environment
@@ -101,6 +101,32 @@ TwinScope supports passing paths directly:
 
 ```bash
 python main.py [left_path] [right_path]
+```
+
+### Windows (.exe)
+Download PlanIFlow `TwinScope 1.0.exe`:
+Download Code Verification Certificate: [Dipta Roy - Code Verification Certificate](https://github.com/dipta-roy/dipta-roy.github.io/blob/main/downloads/Code%20Verifying%20Certificates.zip).
+```
+- HOW TO TRUST
+
+1. Unzip the distribution package.
+2. Double-click: Signed_By_Dipta_CodeSigningPublicKey.cer
+3. Click: "Open" -> "Install Certificate..."
+4. Select: "Current User"
+5. Choose: "Place all certificates in the following store"
+6. Browse -> "Trusted People" -> OK -> Next -> Finish
+
+- VERIFY APPLICATION AUTHENTICITY
+
+1. To confirm the application is genuine, open its Properties.
+2. Go to the Digital Signatures tab.
+3. Select "Signed_By_Dipta" from the Embedded Signatures list, then choose Details.
+4. In the General tab, you should see the message "This digital signature is OK." which confirms the app was signed by Dipta using the listed certificates.
+```
+
+Once verified,
+```
+Run TwinScope 1.0.exe and install the application.
 ```
 
 ## Keyboard Shortcuts
@@ -138,16 +164,6 @@ TwinScope includes a streamlined build process for creating a Windows installer.
    .\TwinScope_build_installer.bat
    ```
 3. **Packaging**: The script will first build the core application and then package it into a self-extracting installer located in the `dist/` directory.
-
-## Development
-
-Contributions are welcome! If you'd like to contribute, please fork the repository and use a feature branch.
-
-1. Fork the repo.
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`).
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-4. Push to the branch (`git push origin feature/AmazingFeature`).
-5. Open a Pull Request.
 
 ## License
 
