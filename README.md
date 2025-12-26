@@ -27,7 +27,7 @@
 
 ## Overview
 
-TwinScope is a cross-platform file and folder comparison tool inspired by Beyond Compare. Built with Python and PyQt6, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees. It includes advanced features like three-way merging, folder synchronization, and report generation.
+TwinScope is a cross-platform file and folder comparison tool. Built with Python and PyQt6, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees. It includes advanced features like three-way merging, folder synchronization, and report generation.
 
 ## Features
 
@@ -172,7 +172,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - The UI framework used.
-- [Beyond Compare](https://www.scootersoftware.com/features.php) - For the inspiration.
 - All contributors who have helped shape TwinScope.
 
 <p align="center">Made with ❤️ by Dipta Roy</p>

@@ -2,7 +2,7 @@
 
 **Date:** 2025-12-26
 **Target:** TwinScope v1.1
-**VirusTotal Reference:** [VirusTotal](https://www.virustotal.com/gui/file/06b5b1d9e01d604aacc9bb2955a91e7a82ed07da27cfb8ca5cb1af1ecf207c29)
+**VirusTotal Reference:** [VirusTotal](https://www.virustotal.com/gui/file/53d0e9539f646d8b7a2b1735db14c7f6c2a94e5cab3dec2fb3df7f852ca5fdd3)
 
 ## 1. Executive Summary
 
