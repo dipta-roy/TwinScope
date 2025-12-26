@@ -74,7 +74,7 @@ TwinScope is a cross-platform file and folder comparison tool inspired by Beyond
 ```bash
 # Clone the repository
 git clone https://github.com/dipta-roy/TwinScope.git
-cd TwinScope_v1.0
+cd TwinScope
 
 # Create and activate a virtual environment
 python -m venv venv
@@ -103,7 +103,7 @@ python main.py [left_path] [right_path]
 ```
 
 ### Windows (.exe)
-Download PlanIFlow `TwinScope 1.0.exe`:
+Download PlanIFlow `TwinScope 1.1.exe`:
 Download Code Verification Certificate: [Dipta Roy - Code Verification Certificate](https://github.com/dipta-roy/dipta-roy.github.io/blob/main/downloads/Code%20Verifying%20Certificates.zip).
 ```
 - HOW TO TRUST
@@ -125,8 +125,9 @@ Download Code Verification Certificate: [Dipta Roy - Code Verification Certifica
 
 Once verified,
 ```
-Run TwinScope 1.0.exe and install the application.
+Run TwinScope 1.1.exe and install the application.
 ```
+
 
 ## Keyboard Shortcuts
 

@@ -77,7 +77,7 @@ def package_installer():
         "--noconfirm",
         "--onefile",
         "--noconsole",
-        "--name", "TwinScope_Setup_1.0.0",
+        "--name", "TwinScope_Setup_1.1.0",
         *(["--icon", icon_path] if icon_path else []),
         "--add-data", f"{payload_path};.",
         *(["--add-data", f"{icon_path};."] if icon_path else []),
@@ -96,7 +96,7 @@ def package_installer():
     if icon_path and os.path.exists(icon_path):
         os.remove(icon_path)
         
-    print(f"[SUCCESS] Installer created at: {os.path.join(dist_dir, 'TwinScope_Setup_1.0.0.exe')}")
+    print(f"[SUCCESS] Installer created at: {os.path.join(dist_dir, 'TwinScope_Setup_1.1.0.exe')}")
 
 if __name__ == "__main__":
     package_installer()

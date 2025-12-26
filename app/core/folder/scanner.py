@@ -352,6 +352,8 @@ class FolderScanner:
             except Exception as e:
                 logging.warning(f"FolderScanner - Could not load .gitignore from {gitignore_path}: {e}")
         
+        visited_paths = set()
+        
         def should_exclude(rel_path: str, is_dir: bool) -> bool:
             """Check if path should be excluded."""
             if matcher and matcher.matches(rel_path, is_dir):
@@ -382,6 +384,20 @@ class FolderScanner:
                 break
             
             current_path = Path(dirpath)
+            
+            # Symlink Cycle Detection
+            if self.options.follow_symlinks:
+                try:
+                    real_path = current_path.resolve()
+                    if real_path in visited_paths:
+                        # Cycle detected or already visited via another path
+                        dirnames.clear() # Stop recursing
+                        logging.warning(f"FolderScanner - Cycle or duplicate scan detected at {current_path} -> {real_path}")
+                        continue
+                    visited_paths.add(real_path)
+                except OSError as e:
+                    logging.warning(f"FolderScanner - Failed to resolve path {current_path}: {e}")
+            
             rel_dir = current_path.relative_to(root_path)
             current_depth = len(rel_dir.parts)
             

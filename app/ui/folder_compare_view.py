@@ -171,7 +171,11 @@ class FolderCompareView(QWidget):
         
         toolbar.addSeparator()
         
-        self._action_sync = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload), "Synchronize...", self) # Using SP_BrowserReload as a generic sync icon
+        self._action_refresh = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload), "Refresh", self)
+        self._action_refresh.triggered.connect(self.refresh)
+        toolbar.addAction(self._action_refresh)
+
+        self._action_sync = QAction(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton), "Synchronize...", self) # Changed icon to avoid confusion
         self._action_sync.triggered.connect(self._on_sync)
         toolbar.addAction(self._action_sync)
         
@@ -521,18 +525,22 @@ class FolderCompareView(QWidget):
         """Open file with default application."""
         import subprocess
         import sys
+        import os
         
         if side == 'left':
             path = Path(self._result.left_path) / item.data.relative_path
         else:
             path = Path(self._result.right_path) / item.data.relative_path
         
-        if sys.platform == 'win32':
-            subprocess.run(['start', '', str(path)], shell=True)
-        elif sys.platform == 'darwin':
-            subprocess.run(['open', str(path)])
-        else:
-            subprocess.run(['xdg-open', str(path)])
+        try:
+            if sys.platform == 'win32':
+                os.startfile(str(path))
+            elif sys.platform == 'darwin':
+                subprocess.run(['open', str(path)], check=False)
+            else:
+                subprocess.run(['xdg-open', str(path)], check=False)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Could not open file: {e}")
     
     def _show_in_explorer(self, item: Any, side: str) -> None:
         """Show file in file explorer."""

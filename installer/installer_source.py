@@ -121,10 +121,17 @@ class InstallerApp:
             if not os.path.exists(payload_path):
                  raise FileNotFoundError("Payload not found. Corrupt installer?")
             
+            dest_abs = os.path.abspath(dest_path)
             with zipfile.ZipFile(payload_path, 'r') as zip_ref:
                 files = zip_ref.namelist()
                 total = len(files)
                 for i, file in enumerate(files):
+                    # Zip Slip Protection
+                    target_path = os.path.join(dest_path, file)
+                    if not os.path.abspath(target_path).startswith(dest_abs):
+                        print(f"Skipping suspicious file: {file}")
+                        continue
+
                     zip_ref.extract(file, dest_path)
                     progress = ((i + 1) / total) * 90
                     self.root.after(0, lambda p=progress: self.progress_var.set(p))
@@ -172,10 +179,15 @@ class InstallerApp:
         
         # Method 1: PowerShell (Modern and robust)
         try:
+            # Escape single quotes for PowerShell
+            ps_link = link_path.replace("'", "''")
+            ps_target = target_path.replace("'", "''")
+            ps_work = work_dir.replace("'", "''")
+
             powershell_cmd = (
-                f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{link_path}');"
-                f"$s.TargetPath='{target_path}';"
-                f"$s.WorkingDirectory='{work_dir}';"
+                f"$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{ps_link}');"
+                f"$s.TargetPath='{ps_target}';"
+                f"$s.WorkingDirectory='{ps_work}';"
                 f"$s.Save()"
             )
             # Use -ExecutionPolicy Bypass to avoid restrictions
@@ -185,20 +197,29 @@ class InstallerApp:
         except Exception as e:
             print(f"PowerShell shortcut creation failed: {e}")
 
-        # Method 2: VBScript (Classic fallback)
-        vbs_script = f"""
+        # Method 2: VBScript (Classic fallback) - Now using secure temp file
+        try:
+            import tempfile
+            
+            # Escape quotes for VBScript
+            vbs_link = link_path.replace('"', '""')
+            vbs_target = target_path.replace('"', '""')
+            vbs_work = work_dir.replace('"', '""')
+
+            vbs_script = f"""
 Set oWS = WScript.CreateObject("WScript.Shell")
-sLinkFile = "{link_path}"
+sLinkFile = "{vbs_link}"
 Set oLink = oWS.CreateShortcut(sLinkFile)
-oLink.TargetPath = "{target_path}"
-oLink.WorkingDirectory = "{work_dir}"
+oLink.TargetPath = "{vbs_target}"
+oLink.WorkingDirectory = "{vbs_work}"
 oLink.Save
 """
-        temp_dir = os.environ.get('TEMP', os.environ.get('TMP', os.getcwd()))
-        vbs_path = os.path.join(temp_dir, "create_shortcut.vbs")
-        try:
-            with open(vbs_path, "w", encoding='utf-8') as f:
+            # Use NamedTemporaryFile for security (avoids predictable path race conditions)
+            # delete=False because cscript needs to read it; we delete manually after.
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.vbs', delete=False, encoding='utf-8') as f:
                 f.write(vbs_script)
+                vbs_path = f.name
+            
             # Use subprocess.run with check=False to avoid crashing if it fails
             result = subprocess.run(['cscript', '//Nologo', vbs_path], 
                                   capture_output=True, creationflags=0x08000000)
@@ -207,7 +228,7 @@ oLink.Save
         except Exception as e:
             print(f"VBScript shortcut creation failed: {e}")
         finally:
-            if os.path.exists(vbs_path):
+            if 'vbs_path' in locals() and os.path.exists(vbs_path):
                 try:
                     os.remove(vbs_path)
                 except:

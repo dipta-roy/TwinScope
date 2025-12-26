@@ -47,7 +47,7 @@ from app.ui import resources
 
 APP_NAME = "FileCompare"
 APP_DISPLAY_NAME = "File Compare"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 APP_ORGANIZATION = "FileCompare"
 APP_DOMAIN = "filecompare.example.com"
 

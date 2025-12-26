@@ -101,7 +101,8 @@ class FileIOService:
         self,
         path: Path | str,
         encoding: Optional[str] = None,
-        normalize_line_endings: bool = False
+        normalize_line_endings: bool = False,
+        max_text_size: int = 50 * 1024 * 1024  # 50MB default limit
     ) -> ReadResult:
         """
         Read a text file with automatic encoding detection.
@@ -110,6 +111,7 @@ class FileIOService:
             path: Path to the file
             encoding: Force specific encoding (auto-detect if None)
             normalize_line_endings: Convert all line endings to \n
+            max_text_size: Maximum file size in bytes to read as text
             
         Returns:
             ReadResult with content or error information
@@ -121,6 +123,17 @@ class FileIOService:
         
         if not path.is_file():
             return ReadResult(success=False, error=f"Not a file: {path}")
+
+        # Check file size before reading
+        try:
+            file_size = path.stat().st_size
+            if file_size > max_text_size:
+                return ReadResult(
+                    success=False, 
+                    error=f"File too large for text comparison ({file_size / 1024 / 1024:.2f} MB). Max size is {max_text_size / 1024 / 1024:.2f} MB."
+                )
+        except OSError as e:
+            return ReadResult(success=False, error=f"Could not check file size: {e}")
         
         # Handle PDF files specifically
         if path.suffix.lower() == '.pdf':

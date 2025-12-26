@@ -115,8 +115,27 @@ class PathSelector(QWidget):
     
     def is_valid(self) -> bool:
         """Check if the current path is valid."""
-        path = Path(self.path())
+        path_str = self.path()
+        if not path_str:
+            return False
+            
+        path = Path(path_str)
         
+        # Security: Check for Windows reserved device names
+        if sys.platform == 'win32':
+            reserved_names = {
+                "CON", "PRN", "AUX", "NUL",
+                "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+                "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+            }
+            # Check if any part of the path is a reserved name
+            try:
+                # normalize and split
+                if path.name.upper() in reserved_names or path.stem.upper() in reserved_names:
+                    return False
+            except Exception:
+                pass
+
         if self.mode == 'file':
             return path.is_file()
         elif self.mode == 'folder':

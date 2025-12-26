@@ -47,7 +47,7 @@ echo ===============================================
 echo   Installer Build Complete!
 echo ===============================================
 echo.
-echo  Output: dist\TwinScope_Setup_1.0.0.exe
+echo  Output: dist\TwinScope_Setup_1.1.0.exe
 echo.
 echo  [FINAL ACTION]
 echo  You may now digitally sign this final installer executable.

@@ -14,6 +14,10 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QBrush, QPen
 import io
 from PIL import Image
 
+# Security: Set a limit to prevent decompression bombs (e.g., 178MP limit)
+# Default is usually around 89MP. Doubling it is reasonable for modern systems but prevents infinite expansion.
+Image.MAX_IMAGE_PIXELS = 178000000 
+
 from app.core.models import ImageDiffResult
 
 class ImageCompareWidget(QWidget):
@@ -97,16 +101,21 @@ class ImageCompareWidget(QWidget):
         
         self._stats_label.setText(f"Similarity: {similarity_pct:.2f}% | L: {left_info} | R: {right_info}")
         
-        # Convert PIL images to QPixmap
-        self._left_pixmap = self._pil_to_pixmap(result.left_image)
-        self._right_pixmap = self._pil_to_pixmap(result.right_image)
-        self._diff_pixmap = self._pil_to_pixmap(result.difference_image)
-        self._vis_pixmap = self._pil_to_pixmap(result.visualization_image)
-        
-        # Generate spotlight version as well
-        self._spotlight_pixmap = self._generate_spotlight_pixmap(result)
-        
-        self._update_display()
+        try:
+            # Convert PIL images to QPixmap
+            self._left_pixmap = self._pil_to_pixmap(result.left_image)
+            self._right_pixmap = self._pil_to_pixmap(result.right_image)
+            self._diff_pixmap = self._pil_to_pixmap(result.difference_image)
+            self._vis_pixmap = self._pil_to_pixmap(result.visualization_image)
+            
+            # Generate spotlight version as well
+            self._spotlight_pixmap = self._generate_spotlight_pixmap(result)
+            
+            self._update_display()
+        except Image.DecompressionBombError:
+            self._stats_label.setText("Error: Image too large (Decompression Bomb detected)")
+        except Exception as e:
+            self._stats_label.setText(f"Error displaying image: {str(e)}")
         
     def _pil_to_pixmap(self, pil_img):
         if pil_img is None:

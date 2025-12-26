@@ -84,6 +84,10 @@ class FileCompareView(QWidget):
         # Register editors for search
         self._search_controller.register_widget("left", self._left_editor)
         self._search_controller.register_widget("right", self._right_editor)
+        
+        # Connect async search signals
+        self._search_controller.search_finished.connect(self._on_search_finished)
+        self._search_controller.search_error.connect(self._on_search_error)
     
     def _setup_ui(self) -> None:
         """Set up the UI."""
@@ -184,6 +188,10 @@ class FileCompareView(QWidget):
         self._legend_button.toggled.connect(self._toggle_legend)
         self._legend_button.hide() # Hide the button as per request
         layout.addWidget(self._legend_button)
+        
+        self._refresh_button = QPushButton("Refresh")
+        self._refresh_button.clicked.connect(self.refresh)
+        layout.addWidget(self._refresh_button)
         
         layout.addWidget(self._right_path_label, 1)
         
@@ -583,11 +591,24 @@ class FileCompareView(QWidget):
     @pyqtSlot(str, object)
     def _on_find(self, text: str, options: SearchOptions) -> None:
         """Handle find request from search widget."""
-        self._update_search_results()
+        # Initiate async search
+        self._search_controller.search(text, options)
+    
+    @pyqtSlot(SearchResult)
+    def _on_search_finished(self, result: SearchResult) -> None:
+        """Handle async search completion."""
+        self._find_bar.set_search_result(result)
         
-        # Jumps to first match for incremental search
-        if text and options.incremental:
-            self._highlight_current_search_match()
+        # Jumps to first match for incremental search if needed
+        # (Logic moved here from _on_find)
+        options = self._find_bar.get_options()
+        if result.search_term and options.incremental and result.has_matches:
+             self._highlight_current_search_match()
+
+    @pyqtSlot(str)
+    def _on_search_error(self, error_msg: str) -> None:
+        """Handle async search error."""
+        self._find_bar.set_error(f"Search error: {error_msg}")
 
     @pyqtSlot()
     def _on_find_next(self) -> None:
@@ -813,18 +834,8 @@ class FileCompareView(QWidget):
         if not self._find_bar.isVisible():
             return
             
-        if not text:
-            self._search_controller.clear_highlights()
-            self._find_bar.set_search_result(self._search_controller.get_result())
-            return
-
-        try:
-            result = self._search_controller.search(text, options)
-            self._find_bar.set_search_result(result)
-        except re.error as e:
-            self._find_bar.set_error(f"Invalid regex: {e}")
-        except Exception as e:
-            self._find_bar.set_error(f"Search error: {e}")
+        # Initiate async search
+        self._search_controller.search(text, options)
 
     def _highlight_current_search_match(self) -> None:
         """Update current highlight and scroll to match."""

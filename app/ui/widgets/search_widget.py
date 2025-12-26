@@ -1226,20 +1226,79 @@ class MatchHighlighter(QSyntaxHighlighter):
         return True
 
 
-class SearchController:
+from PyQt6.QtCore import (
+    Qt, pyqtSignal, pyqtSlot, QTimer, QSize, QRegularExpression,
+    QSettings, QPoint, QObject, QThreadPool, QRunnable
+)
+
+# ... (Previous imports)
+
+class SearchWorkerSignals(QObject):
+    """Signals for SearchWorker."""
+    finished = pyqtSignal(object)  # Returns list of (start, end, text) tuples
+    error = pyqtSignal(str)
+
+class SearchWorker(QRunnable):
+    """
+    Worker for running regex searches in background.
+    """
+    def __init__(self, text: str, pattern: str, options: SearchOptions):
+        super().__init__()
+        self.text = text
+        self.pattern = pattern
+        self.options = options
+        self.signals = SearchWorkerSignals()
+    
+    def run(self):
+        try:
+            matches = []
+            flags = 0
+            if not self.options.case_sensitive:
+                flags |= re.IGNORECASE
+            
+            # Simple timeout mechanism using a loop if possible, 
+            # but standard re.finditer blocks. 
+            # We rely on the fact that we are in a separate thread so UI doesn't freeze.
+            # A true "timeout" to kill the thread is hard in Python without processes.
+            # However, unblocking the UI is the primary goal of ReDoS protection in desktop apps.
+            
+            regex = re.compile(self.pattern, flags)
+            
+            # Limit number of matches to prevent OOM on massive match counts
+            MAX_MATCHES = 10000 
+            count = 0
+            
+            for match in regex.finditer(self.text):
+                matches.append((match.start(), match.end(), match.group()))
+                count += 1
+                if count >= MAX_MATCHES:
+                    break
+            
+            self.signals.finished.emit(matches)
+            
+        except re.error as e:
+            self.signals.error.emit(str(e))
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+class SearchController(QObject): # Inherit QObject for signals
     """
     Controller for managing search across multiple text widgets.
     
     Coordinates search between different panels.
     """
-    
+    search_finished = pyqtSignal(SearchResult) # New signal
+    search_error = pyqtSignal(str) # New signal
+
     def __init__(self, colors: DiffColors):
+        super().__init__()
         self._engine = SearchEngine()
         self._widgets: dict[str, QPlainTextEdit] = {}
         self._highlighters: dict[str, MatchHighlighter] = {}
         self._current_result = SearchResult()
         self._current_widget: Optional[str] = None
-        self._colors = colors # Store DiffColors
+        self._colors = colors 
+        self._thread_pool = QThreadPool()
     
     def register_widget(self, name: str, widget: QPlainTextEdit) -> None:
         """Register a text widget for searching."""
@@ -1259,18 +1318,49 @@ class SearchController:
         term: str,
         options: SearchOptions,
         widget_name: Optional[str] = None
-    ) -> SearchResult:
+    ) -> None: # Changed return to None (async)
         """
         Perform search across registered widgets.
-        
-        Args:
-            term: Search term
-            options: Search options
-            widget_name: Specific widget to search (None for all)
-            
-        Returns:
-            Combined SearchResult
         """
+        if not term:
+            self.clear_highlights()
+            self.search_finished.emit(SearchResult())
+            return
+
+        # If it's a simple text search, run synchronously (fast enough)
+        if not options.regex:
+            result = self._search_sync(term, options, widget_name)
+            self.search_finished.emit(result)
+            return
+            
+        # For regex, use worker
+        # We need to collect text from all widgets
+        widgets_to_search = (
+            {widget_name: self._widgets[widget_name]}
+            if widget_name and widget_name in self._widgets
+            else self._widgets
+        )
+        
+        # Dispatch a worker for EACH widget? Or one big text?
+        # Simplest is one worker per widget, then combine. 
+        # But handling multiple async returns is complex.
+        # Let's do a simplified approach: Search is usually fast. 
+        # ReDoS hangs. We just need to NOT hang the UI.
+        
+        # We will dispatch sequentially or just handle the first one for now 
+        # to keep it simple, OR we run one worker that handles the loop over widgets (using text copies).
+        
+        combined_text_data = [] # list of (name, text)
+        for name, widget in widgets_to_search.items():
+            combined_text_data.append((name, widget.toPlainText()))
+            
+        worker = CombinedSearchWorker(combined_text_data, term, options)
+        worker.signals.finished.connect(self._on_search_worker_finished)
+        worker.signals.error.connect(self._on_search_worker_error)
+        self._thread_pool.start(worker)
+
+    def _search_sync(self, term, options, widget_name) -> SearchResult:
+        """Original synchronous search logic (refactored)."""
         all_matches: List[SearchMatch] = []
         
         widgets_to_search = (
@@ -1282,14 +1372,10 @@ class SearchController:
         for name, widget in widgets_to_search.items():
             document = widget.document()
             result = self._engine.search(document, term, options)
-            
-            # Tag matches with panel name
             for match in result.matches:
                 match.panel = name
-            
             all_matches.extend(result.matches)
             
-            # Update highlighter
             if name in self._highlighters:
                 self._highlighters[name].set_search_term(term, options)
         
@@ -1298,8 +1384,94 @@ class SearchController:
             current_index=0 if all_matches else -1,
             search_term=term
         )
-        
         return self._current_result
+
+    def _on_search_worker_finished(self, results):
+        """Handle async search results: list of (name, matches_tuples)"""
+        all_matches = []
+        term = ""
+        options = None
+
+        for name, match_tuples, term_in, options_in in results:
+            term = term_in
+            options = options_in
+            
+            if name not in self._widgets: continue
+            
+            widget = self._widgets[name]
+            document = widget.document()
+            
+            # Reconstruct SearchMatch objects mapped to document
+            for start, end, text in match_tuples:
+                 # Calculate line/col from document (must happen on main thread)
+                block = document.findBlock(start)
+                line = block.blockNumber() + 1
+                column = start - block.position() + 1
+                
+                match = SearchMatch(
+                    start=start,
+                    end=end,
+                    line=line,
+                    column=column,
+                    text=text,
+                    panel=name
+                )
+                all_matches.append(match)
+            
+            # Update highlighter
+            if name in self._highlighters:
+                self._highlighters[name].set_search_term(term, options)
+
+        self._current_result = SearchResult(
+            matches=all_matches,
+            current_index=0 if all_matches else -1,
+            search_term=term
+        )
+        self.search_finished.emit(self._current_result)
+
+    def _on_search_worker_error(self, error):
+        self.search_error.emit(error)
+
+    # ... (rest of methods: find_next, find_prev, etc. remain same)
+
+class CombinedSearchWorker(QRunnable):
+    """Worker to search multiple texts."""
+    def __init__(self, text_data: list, pattern: str, options: SearchOptions):
+        super().__init__()
+        self.text_data = text_data # [(name, text), ...]
+        self.pattern = pattern
+        self.options = options
+        self.signals = SearchWorkerSignals()
+
+    def run(self):
+        try:
+            results = [] # [(name, match_tuples, term, options), ...]
+            flags = 0
+            if not self.options.case_sensitive:
+                flags |= re.IGNORECASE
+            
+            regex = re.compile(self.pattern, flags)
+            MAX_MATCHES = 10000
+            
+            for name, text in self.text_data:
+                matches = []
+                count = 0
+                for match in regex.finditer(text):
+                    matches.append((match.start(), match.end(), match.group()))
+                    count += 1
+                    if count >= MAX_MATCHES: break
+                
+                results.append((name, matches, self.pattern, self.options))
+            
+            self.signals.finished.emit(results)
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+class SearchController_Old: # Kept for reference or removed? REMOVING.
+    pass
+
+# ... (Previous imports)
+
     
     def find_next(self, options: SearchOptions) -> Optional[SearchMatch]:
         """Find next match."""

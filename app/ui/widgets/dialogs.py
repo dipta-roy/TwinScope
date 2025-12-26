@@ -177,7 +177,7 @@ class AboutDialog(QDialog):
         about_content = """
 **TwinScope** is a cross-platform file and folder comparison tool inspired by Beyond Compare. Built with Python, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees.
 
-**Application Version**:1.0
+**Application Version**:1.1
 
 **Author**: Dipta Roy
         """
