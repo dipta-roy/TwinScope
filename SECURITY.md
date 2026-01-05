@@ -1,8 +1,8 @@
 # Security Assessment Report: TwinScope v1.1
 
-**Date:** 2025-12-26
+**Date:** 2026-01-06
 **Target:** TwinScope v1.1
-**VirusTotal Reference:** [VirusTotal](https://www.virustotal.com/gui/file/53d0e9539f646d8b7a2b1735db14c7f6c2a94e5cab3dec2fb3df7f852ca5fdd3)
+**VirusTotal Reference:** [VirusTotal](https://www.virustotal.com/gui/file/ab4e6ad7d1d69cf61f7281129ee847d128d254ee587a7cc4ae282880e28b4e28)
 
 ## 1. Executive Summary
 
