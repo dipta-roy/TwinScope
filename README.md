@@ -156,14 +156,30 @@ Run TwinScope_Setup_1.1.0.msi and install the application.
 
 ## Building the Installer
 
-TwinScope includes a streamlined build process for creating a Windows MSI installer using `cx_Freeze`.
+TwinScope uses `cx_Freeze` to package the application into a Windows MSI installer. A streamlined build script `TwinScope_build_msi.bat` is provided to automate this process.
 
-1. **Prerequisites**: Ensure you have `cx_Freeze` installed (`pip install cx_Freeze` or use `pip install -r requirements.txt`).
-2. **Run Build Script**:
+### Prerequisites
+
+- **Python 3.10+**
+- **cx_Freeze 8.5+** (installed via `pip install cx_Freeze` or `pip install -r requirements.txt`)
+- **PyQt6** and other dependencies.
+
+### Build Steps
+
+1. **Activate Virtual Environment**: Ensure your virtual environment is set up and active. The build script will attempt to activate `venv\Scripts\activate.bat` automatically.
+2. **Run the Build Script**:
    ```powershell
    .\TwinScope_build_msi.bat
    ```
-3. **Packaging**: The script will first build the core application executable and then package it into an `.msi` installer located in the `dist/` directory.
+3. **Wait for Build Completion**:
+   - **Step 1**: The script sets up the environment.
+   - **Step 2**: It builds the core executables and binaries into the `build/` directory.
+   - **Pause for Signing (Optional)**: The script will pause. If you have a code-signing certificate, you can sign `build\exe.win-amd64-3.11\TwinScope.exe` at this point to avoid "Unknown Publisher" warnings.
+   - **Step 3**: Press any key to continue. The script will package the binaries into an `.msi` installer.
+4. **Output**: The final installer (`TwinScope_Setup_1.1.0.msi`) will be located in the `dist/` directory.
+
+### Customizing the Build
+The build configuration is managed in `installer/setup_msi.py`. You can modify `build_exe_options` or `bdist_msi_options` to change included files, dependencies, or installer metadata (like the upgrade code or version).
 
 ## License
 
