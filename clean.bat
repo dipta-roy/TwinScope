@@ -33,10 +33,45 @@ if exist "dist\" (
     set /a FILES_CLEANED+=1
 )
 
-REM Remove spec files
-if exist "*.spec" (
-    del /q *.spec
-    echo [SUCCESS] Removed .spec files.
+@echo off
+SETLOCAL EnableDelayedExpansion
+
+echo ===============================================
+echo   TwinScope - Cleanup
+echo ===============================================
+echo.
+
+set /p CONFIRM="This will remove build artifacts and cache files. Continue? (Y/N): "
+if /i not "!CONFIRM!"=="Y" (
+    echo [INFO] Cleanup cancelled.
+    pause
+    exit /b 0
+)
+
+echo.
+echo [INFO] Cleaning build artifacts...
+echo.
+
+set FILES_CLEANED=0
+
+REM Remove build folder
+if exist "build\" (
+    rmdir /s /q build
+    echo [SUCCESS] Removed build\ folder.
+    set /a FILES_CLEANED+=1
+)
+
+REM Remove dist folder
+if exist "dist\" (
+    rmdir /s /q dist
+    echo [SUCCESS] Removed dist\ folder.
+    set /a FILES_CLEANED+=1
+)
+
+REM Remove leftover artifacts
+if exist "installer\nuitka-crash-report.xml" (
+    del /q installer\nuitka-crash-report.xml
+    echo [SUCCESS] Removed nuitka crash report.
     set /a FILES_CLEANED+=1
 )
 
@@ -46,6 +81,38 @@ for /d /r . %%d in (__pycache__) do @if exist "%%d" (
     echo [INFO] Removed %%d
     set /a FILES_CLEANED+=1
 )
+
+REM Remove .pyc files
+for /r . %%f in (*.pyc) do @if exist "%%f" (
+    del /q "%%f"
+    set /a FILES_CLEANED+=1
+)
+
+
+echo.
+if !FILES_CLEANED! gtr 0 (
+    echo [SUCCESS] Cleanup completed! Removed !FILES_CLEANED! items.
+) else (
+    echo [INFO] Nothing to clean - project is already clean.
+)
+echo.
+
+set /p CLEAN_VENV="Do you also want to remove the virtual environment? (Y/N): "
+if /i "!CLEAN_VENV!"=="Y" (
+    if exist "venv\" (
+        echo [INFO] Removing virtual environment...
+        rmdir /s /q venv
+        echo [SUCCESS] Virtual environment removed.
+    ) else (
+        echo [INFO] No virtual environment found.
+    )
+)
+
+echo.
+echo ===============================================
+echo   Cleanup complete!
+echo ===============================================
+pause
 
 REM Remove .pyc files
 for /r . %%f in (*.pyc) do @if exist "%%f" (

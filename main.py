@@ -415,6 +415,13 @@ Examples:
         help='Start new instance even if one is running'
     )
     
+    # Installer support
+    parser.add_argument(
+        '--create-shortcut',
+        action='store_true',
+        help='Create desktop shortcut (internal use)'
+    )
+    
     # Plugins
     parser.add_argument(
         '--no-plugins',
@@ -443,6 +450,11 @@ Examples:
     result.reset_settings = parsed.reset_settings
     result.new_instance = parsed.new_instance
     result.debug = parsed.debug
+    
+    # Check for shortcut creation request
+    if parsed.create_shortcut:
+        create_desktop_shortcut()
+        sys.exit(0)
     
     # Determine mode
     if parsed.restore:
@@ -476,6 +488,41 @@ Examples:
         result.log_level = parsed.log_level
     
     return result
+
+
+def create_desktop_shortcut():
+    """Create a desktop shortcut for the application."""
+    try:
+        import win32com.client
+        from pathlib import Path
+        
+        # Get paths
+        if getattr(sys, 'frozen', False):
+            target_path = sys.executable
+        else:
+            target_path = sys.argv[0]
+            
+        target_path = str(Path(target_path).resolve())
+        work_dir = str(Path(target_path).parent)
+        
+        desktop = Path(os.environ['USERPROFILE']) / 'Desktop'
+        shortcut_path = desktop / f"{APP_DISPLAY_NAME}.lnk"
+        
+        # Create shortcut
+        shell = win32com.client.Dispatch("WScript.Shell")
+        shortcut = shell.CreateShortcut(str(shortcut_path))
+        shortcut.TargetPath = target_path
+        shortcut.WorkingDirectory = work_dir
+        shortcut.IconLocation = target_path
+        shortcut.WindowStyle = 1  # Normal window
+        shortcut.Description = "TwinScope File Comparison Tool"
+        shortcut.Save()
+        
+    except Exception as e:
+        # Silently fail or log to a file if possible, as we don't have a console
+        with open(os.path.join(os.environ['TEMP'], 'twinscope_shortcut_error.log'), 'w') as f:
+            f.write(str(e))
+        sys.exit(1)
 
 
 def set_app_icon(app: QApplication) -> None:

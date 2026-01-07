@@ -27,7 +27,7 @@
 
 ## Overview
 
-TwinScope is a cross-platform file and folder comparison tool. Built with Python and PyQt6, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees. It includes advanced features like three-way merging, folder synchronization, and report generation.
+TwinScope is a cross-platform file and folder comparison tool inspired by Beyond Compare. Built with Python and PyQt6, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees. It includes advanced features like three-way merging, folder synchronization, and report generation.
 
 ## Features
 
@@ -102,8 +102,8 @@ TwinScope supports passing paths directly:
 python main.py [left_path] [right_path]
 ```
 
-### Windows (.exe)
-Download PlanIFlow `TwinScope 1.1.exe`:
+### Windows Installer (.msi)
+Download `TwinScope_Setup_1.1.0.msi`:
 Download Code Verification Certificate: [Dipta Roy - Code Verification Certificate](https://github.com/dipta-roy/dipta-roy.github.io/blob/main/downloads/Code%20Verifying%20Certificates.zip).
 ```
 - HOW TO TRUST
@@ -125,7 +125,7 @@ Download Code Verification Certificate: [Dipta Roy - Code Verification Certifica
 
 Once verified,
 ```
-Run TwinScope 1.1.exe and install the application.
+Run TwinScope_Setup_1.1.0.msi and install the application.
 ```
 
 
@@ -156,14 +156,14 @@ Run TwinScope 1.1.exe and install the application.
 
 ## Building the Installer
 
-TwinScope includes a streamlined build process for creating a Windows installer.
+TwinScope includes a streamlined build process for creating a Windows MSI installer using `cx_Freeze`.
 
-1. **Prerequisites**: Ensure you have `pyinstaller` installed (`pip install pyinstaller`).
+1. **Prerequisites**: Ensure you have `cx_Freeze` installed (`pip install cx_Freeze` or use `pip install -r requirements.txt`).
 2. **Run Build Script**:
    ```powershell
-   .\TwinScope_build_installer.bat
+   .\TwinScope_build_msi.bat
    ```
-3. **Packaging**: The script will first build the core application and then package it into a self-extracting installer located in the `dist/` directory.
+3. **Packaging**: The script will first build the core application executable and then package it into an `.msi` installer located in the `dist/` directory.
 
 ## License
 
@@ -172,6 +172,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - The UI framework used.
+- [Beyond Compare](https://www.scootersoftware.com/features.php) - For the inspiration.
 - All contributors who have helped shape TwinScope.
 
 <p align="center">Made with ❤️ by Dipta Roy</p>
