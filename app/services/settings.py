@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field, asdict
-from pathlib import Path
-from typing import Any, Optional
+from dataclasses import asdict, dataclass, field
 from enum import Enum, auto
+from pathlib import Path
+from typing import Any, Callable, Optional, TypeVar
 
 
 class Theme(Enum):
@@ -52,13 +52,13 @@ class ComparisonSettings:
     show_line_numbers: bool = True
     word_wrap: bool = False
     tab_size: int = 4
-    
+
     # Folder comparison
     recursive: bool = True
     follow_symlinks: bool = False
     compare_file_contents: bool = True
     quick_compare_by_size: bool = True
-    
+
     # File filters
     include_patterns: list[str] = field(default_factory=list)
     exclude_patterns: list[str] = field(default_factory=lambda: [
@@ -76,14 +76,14 @@ class UISettings:
     window_width: int = 1200
     window_height: int = 800
     window_maximized: bool = False
-    splitter_position: int = 500
+    splitter_position: int | str = 500
     show_toolbar: bool = True
     show_statusbar: bool = True
     recent_files_limit: int = 5
     recent_history_limit: int = 10
 
 
-@dataclass 
+@dataclass
 class ColorSettings:
     """Color settings for diff highlighting."""
     added_background: str = "#e6ffe6"
@@ -91,21 +91,21 @@ class ColorSettings:
     modified_background: str = "#fffde6"
     identical_background: str = "#ffffff"
     conflict_background: str = "#fff0f0"
-    
+
     added_text: str = "#006600"
     removed_text: str = "#660000"
     modified_text: str = "#666600"
-    
+
     line_number_color: str = "#999999"
     line_number_background: str = "#f5f5f5"
-    
+
     # Folder comparison colors
     folder_identical_color: str = "#e0e0e0" # Light gray
     folder_modified_color: str = "#fffacd"  # Lemon chiffon
     folder_left_only_color: str = "#e6f7ff" # Light blue
     folder_right_only_color: str = "#ffe6e6" # Light red
     folder_conflict_color: str = "#ffcccc"  # Light red for conflicts
-    
+
     # Dark theme overrides
     dark_added_background: str = "#1e3a1e"
     dark_removed_background: str = "#3a1e1e"
@@ -130,7 +130,7 @@ class ApplicationSettings:
     ui: UISettings = field(default_factory=UISettings)
     colors: ColorSettings = field(default_factory=ColorSettings)
     merge: MergeSettings = field(default_factory=MergeSettings)
-    
+
     recent_left_paths: list[str] = field(default_factory=list)
     recent_right_paths: list[str] = field(default_factory=list)
     recent_comparisons: list[tuple[str, str]] = field(default_factory=list)
@@ -139,83 +139,91 @@ class ApplicationSettings:
 
 class SettingsManager:
     """Manager for loading/saving application settings."""
-    
+
     def __init__(self, settings_path: Optional[Path] = None):
         self.settings_path = settings_path or self._get_default_path()
         self._settings: Optional[ApplicationSettings] = None
-        self._observers: list[callable] = []
-    
+        self._observers: list[Callable[[Any], None]] = []
+
     @staticmethod
     def _get_default_path() -> Path:
         """Get the default settings file path."""
         if os.name == 'nt':
             # Windows
             app_data = os.environ.get('APPDATA', os.path.expanduser('~'))
-            return Path(app_data) / 'FileCompare' / 'settings.json'
+            legacy_path = Path(app_data) / 'FileCompare' / 'settings.json'
+            twinscope_path = Path(app_data) / 'TwinScope' / 'settings.json'
+            if legacy_path.exists() and not twinscope_path.exists():
+                return legacy_path
+            return twinscope_path
         else:
             # Linux/Mac
-            config_home = os.environ.get('XDG_CONFIG_HOME', 
+            config_home = os.environ.get('XDG_CONFIG_HOME',
                                          os.path.expanduser('~/.config'))
-            return Path(config_home) / 'filecompare' / 'settings.json'
-    
+            legacy_path = Path(config_home) / 'filecompare' / 'settings.json'
+            twinscope_path = Path(config_home) / 'twinscope' / 'settings.json'
+            if legacy_path.exists() and not twinscope_path.exists():
+                return legacy_path
+            return twinscope_path
+
     @property
     def settings(self) -> ApplicationSettings:
         """Get current settings, loading from disk if needed."""
         if self._settings is None:
             self._settings = self.load()
         return self._settings
-    
+
     def load(self) -> ApplicationSettings:
         """Load settings from disk."""
         if not self.settings_path.exists():
             return ApplicationSettings()
-        
+
         try:
             with open(self.settings_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             loaded_settings = self._from_dict(data)
 
             return loaded_settings
         except Exception:
             return ApplicationSettings()
-    
+
     def save(self, settings: Optional[ApplicationSettings] = None) -> bool:
         """Save settings to disk."""
         settings = settings or self._settings
         if settings is None:
             return False
-        
+
         try:
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             data = self._to_dict(settings)
-            
+
             with open(self.settings_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
-            
+
             self._settings = settings
             self._notify_observers()
             return True
-            
+
         except Exception:
             return False
-    
+
     def reset(self) -> ApplicationSettings:
         """Reset to default settings."""
         self._settings = ApplicationSettings()
         self.save()
         return self._settings
-    
-    def add_observer(self, callback: callable) -> None:
+
+    def add_observer(self, callback: Callable[[Any], None]) -> None:
         """Add a callback to be notified of settings changes."""
         self._observers.append(callback)
-    
-    def remove_observer(self, callback: callable) -> None:
+
+    def remove_observer(self, callback: Callable[[Any], None]) -> None:
         """Remove a settings change observer."""
         if callback in self._observers:
             self._observers.remove(callback)
-    
+
     def _notify_observers(self) -> None:
         """Notify all observers of settings change."""
         for callback in self._observers:
@@ -223,32 +231,32 @@ class SettingsManager:
                 callback(self._settings)
             except Exception:
                 pass
-    
+
     def add_recent_path(self, path: str, is_left: bool) -> None:
         """Add a path to recent files list."""
         settings = self.settings
-        
+
         if is_left:
             recent = settings.recent_left_paths
         else:
             recent = settings.recent_right_paths
-        
+
         # Remove if already exists
         if path in recent:
             recent.remove(path)
-        
+
         # Add to front
         recent.insert(0, path)
-        
+
         # Trim to limit
         limit = settings.ui.recent_files_limit
         if is_left:
             settings.recent_left_paths = recent[:limit]
         else:
             settings.recent_right_paths = recent[:limit]
-        
+
         self.save()
-    
+
     def _to_dict(self, settings: ApplicationSettings) -> dict:
         """Convert settings to dictionary for JSON serialization."""
         def convert(obj: Any) -> Any:
@@ -262,26 +270,30 @@ class SettingsManager:
                 return {k: convert(v) for k, v in obj.items()}
             else:
                 return obj
-        
+
         return convert(settings)
-    
+
     def _from_dict(self, data: dict) -> ApplicationSettings:
         """Convert dictionary back to settings objects."""
-        def get_enum(enum_class: type, value: Any) -> Enum:
+        EnumType = TypeVar('EnumType', bound=Enum)
+
+        def get_enum(enum_class: type[EnumType], value: Any, default: EnumType) -> EnumType:
             if isinstance(value, str):
                 try:
                     return enum_class[value]
                 except KeyError:
-                    return list(enum_class)[0]
-            return value
-        
+                    return default
+            elif isinstance(value, enum_class):
+                return value
+            return default
+
         comparison = ComparisonSettings(
             ignore_whitespace=data.get('comparison', {}).get('ignore_whitespace', False),
             ignore_case=data.get('comparison', {}).get('ignore_case', False),
             ignore_blank_lines=data.get('comparison', {}).get('ignore_blank_lines', False),
             ignore_line_endings=data.get('comparison', {}).get('ignore_line_endings', True),
             context_lines=data.get('comparison', {}).get('context_lines', 3),
-            diff_style=get_enum(DiffStyle, data.get('comparison', {}).get('diff_style', 'SIDE_BY_SIDE')),
+            diff_style=get_enum(DiffStyle, data.get('comparison', {}).get('diff_style', 'SIDE_BY_SIDE'), DiffStyle.SIDE_BY_SIDE),
             show_line_numbers=data.get('comparison', {}).get('show_line_numbers', True),
             word_wrap=data.get('comparison', {}).get('word_wrap', False),
             tab_size=data.get('comparison', {}).get('tab_size', 4),
@@ -290,12 +302,12 @@ class SettingsManager:
             compare_file_contents=data.get('comparison', {}).get('compare_file_contents', True),
             quick_compare_by_size=data.get('comparison', {}).get('quick_compare_by_size', True),
             include_patterns=data.get('comparison', {}).get('include_patterns', []),
-            exclude_patterns=data.get('comparison', {}).get('exclude_patterns', 
+            exclude_patterns=data.get('comparison', {}).get('exclude_patterns',
                 ComparisonSettings().exclude_patterns),
         )
-        
+
         ui = UISettings(
-            theme=get_enum(Theme, data.get('ui', {}).get('theme', 'SYSTEM')),
+            theme=get_enum(Theme, data.get('ui', {}).get('theme', 'SYSTEM'), Theme.SYSTEM),
             font_family=data.get('ui', {}).get('font_family', 'Consolas'),
             font_size=data.get('ui', {}).get('font_size', 10),
             window_width=data.get('ui', {}).get('window_width', 1200),
@@ -307,7 +319,7 @@ class SettingsManager:
             recent_files_limit=data.get('ui', {}).get('recent_files_limit', 5),
             recent_history_limit=data.get('ui', {}).get('recent_history_limit', 10),
         )
-        
+
         colors_data = data.get('colors', {})
         colors = ColorSettings(
             added_background=colors_data.get('added_background', ColorSettings().added_background),
@@ -326,7 +338,7 @@ class SettingsManager:
             folder_right_only_color=colors_data.get('folder_right_only_color', ColorSettings().folder_right_only_color),
             folder_conflict_color=colors_data.get('folder_conflict_color', ColorSettings().folder_conflict_color),
         )
-        
+
         merge = MergeSettings(
             auto_resolve_identical=data.get('merge', {}).get('auto_resolve_identical', True),
             auto_resolve_whitespace=data.get('merge', {}).get('auto_resolve_whitespace', True),
@@ -335,7 +347,7 @@ class SettingsManager:
             create_backup=data.get('merge', {}).get('create_backup', True),
             backup_extension=data.get('merge', {}).get('backup_extension', '.orig'),
         )
-        
+
         return ApplicationSettings(
             comparison=comparison,
             ui=ui,

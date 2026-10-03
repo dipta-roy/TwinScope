@@ -1,15 +1,15 @@
 # Security Transparency Report
-**Product:** TwinScope v1.1  
+**Product:** TwinScope v1.2 
 **Date:** January 7, 2026
 
 ## Executive Summary
 
-At TwinScope, we prioritize the security and integrity of your data. This report outlines the security architecture of TwinScope v1.1, the measures we have implemented to ensure safe operation, and guidance on how to verify the authenticity of our software.
+At TwinScope, we prioritize the security and integrity of your data. This report outlines the security architecture of TwinScope v1.2, the measures we have implemented to ensure safe operation, and guidance on how to verify the authenticity of our software.
 
 ## Key Security Features
 
 ### 1. Standardized Installation Process
-We have transitioned to a standard **Windows MSI Installer** ecosystem. Unlike previous iterations that utilized custom scripts, TwinScope v1.1 uses industry-standard Microsoft Installer technology.
+We have transitioned to a standard **Windows MSI Installer** ecosystem. Unlike previous iterations that utilized custom scripts, TwinScope v1.2 uses industry-standard Microsoft Installer technology.
 - **Benefit:** This ensures a clean install/uninstall process that adheres to Windows strict directory standards.
 - **Safety:** No temporary scripts or "dropper" mechanisms are used. The installer places files directly into `Program Files` and creates shortcuts using standard Windows APIs.
 
@@ -30,7 +30,7 @@ We strictly manage third-party libraries to prevent supply-chain vulnerabilities
 When installing TwinScope, you may see a Windows SmartScreen warning stating "Unknown Publisher."
 
 **Why this happens:**
-TwinScope v1.1 is currently signed with a **Self-Signed Code Signing Certificate**. While this cryptographically seals the application to ensure it hasn't been tampered with since we built it, it does not yet have the global reputation of a certificate issued by a large commercial Certificate Authority (CA).
+TwinScope v1.2s is currently signed with a **Self-Signed Code Signing Certificate**. While this cryptographically seals the application to ensure it hasn't been tampered with since we built it, it does not yet have the global reputation of a certificate issued by a large commercial Certificate Authority (CA).
 
 **Our Commitment:**
 We verify every build. The self-signed certificate guarantees that the code you run is exactly the code we compiled.

@@ -7,19 +7,19 @@ Provides engines for comparing:
 - Image files (visual difference detection)
 """
 
-from app.core.diff.text_diff import (
-    TextDiffEngine,
-    DiffAlgorithm,
-    TextCompareOptions,
-)
 from app.core.diff.binary_diff import (
-    BinaryDiffEngine,
     BinaryCompareOptions,
+    BinaryDiffEngine,
 )
 from app.core.diff.image_diff import (
-    ImageDiffEngine,
     ImageCompareOptions,
+    ImageDiffEngine,
     ImageDiffMode,
+)
+from app.core.diff.text_diff import (
+    DiffAlgorithm,
+    TextCompareOptions,
+    TextDiffEngine,
 )
 
 __all__ = [

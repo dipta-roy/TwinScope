@@ -14,34 +14,34 @@ with the UI thread.
 
 from app.workers.base_worker import (
     BaseWorker,
+    CancellableWorker,
     WorkerSignals,
     WorkerState,
-    CancellableWorker,
 )
 from app.workers.compare_worker import (
-    TextCompareWorker,
     BinaryCompareWorker,
-    ImageCompareWorker,
     FolderCompareWorker,
-)
-from app.workers.scan_worker import (
-    FolderScanWorker,
-    BatchScanWorker,
-)
-from app.workers.sync_worker import (
-    SyncWorker,
-    SyncPlanWorker,
+    ImageCompareWorker,
+    TextCompareWorker,
 )
 from app.workers.hash_worker import (
-    HashWorker,
     BatchHashWorker,
+    HashWorker,
 )
 from app.workers.merge_worker import (
     MergeWorker,
 )
+from app.workers.scan_worker import (
+    BatchScanWorker,
+    FolderScanWorker,
+)
+from app.workers.sync_worker import (
+    SyncPlanWorker,
+    SyncWorker,
+)
 from app.workers.thread_pool import (
-    WorkerPool,
     TaskQueue,
+    WorkerPool,
 )
 
 __all__ = [

@@ -10,12 +10,12 @@ Provides common functionality for all workers:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Callable, Generic, Optional, TypeVar
+from typing import Any, Callable, Optional
 
-from PyQt6.QtCore import QObject, QThread, QRunnable, pyqtSignal, pyqtSlot, QMutex, QMutexLocker
+from PyQt6.QtCore import QMutex, QMutexLocker, QObject, QRunnable, QThread, pyqtSignal, pyqtSlot
 
 
 class WorkerState(Enum):
@@ -36,13 +36,13 @@ class ProgressInfo:
     total: int
     message: str = ""
     detail: str = ""
-    
+
     @property
     def percent(self) -> float:
         if self.total == 0:
             return 0.0
         return (self.current / self.total) * 100
-    
+
     @property
     def is_indeterminate(self) -> bool:
         return self.total == 0
@@ -57,38 +57,31 @@ class WorkerSignals(QObject):
     """
     # Progress update: (current, total, message)
     progress = pyqtSignal(int, int, str)
-    
+
     # Detailed progress: ProgressInfo object
     progress_detail = pyqtSignal(object)
-    
+
     # Status message
     status = pyqtSignal(str)
-    
+
     # Worker started
     started = pyqtSignal()
-    
+
     # Worker finished successfully with result
     finished = pyqtSignal(object)
-    
+
     # Worker failed with error
     error = pyqtSignal(str, str)  # (error_type, message)
-    
+
     # Worker was cancelled
     cancelled = pyqtSignal()
-    
+
     # State changed
     state_changed = pyqtSignal(object)  # WorkerState
 
 
-T = TypeVar('T')
 
-
-
-class WorkerMeta(type(QObject), type(ABC)):
-    pass
-
-
-class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
+class BaseWorker(QObject):
     """
     Base class for workers that run in a QThread.
     
@@ -102,7 +95,7 @@ class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
         worker.finished.connect(thread.quit)
         thread.start()
     """
-    
+
     def __init__(self, parent: Optional[QObject] = None):
         super().__init__(parent)
         self.signals = WorkerSignals()
@@ -111,35 +104,35 @@ class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
         self._mutex = QMutex()
         self._result: Any = None
         self._error: Optional[tuple[str, str]] = None
-    
+
     @property
     def state(self) -> WorkerState:
         """Current worker state."""
         with QMutexLocker(self._mutex):
             return self._state
-    
+
     @state.setter
     def state(self, value: WorkerState) -> None:
         with QMutexLocker(self._mutex):
             self._state = value
         self.signals.state_changed.emit(value)
-    
+
     @property
     def is_cancelled(self) -> bool:
         """Check if cancellation was requested."""
         with QMutexLocker(self._mutex):
             return self._cancelled
-    
+
     @property
     def result(self) -> Any:
         """Get the result (after completion)."""
         return self._result
-    
+
     @property
     def error(self) -> Optional[tuple[str, str]]:
         """Get error info (after failure)."""
         return self._error
-    
+
     def cancel(self) -> None:
         """Request cancellation."""
         with QMutexLocker(self._mutex):
@@ -147,7 +140,7 @@ class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
             if self._state == WorkerState.RUNNING:
                 self._state = WorkerState.CANCELLING
         self.signals.state_changed.emit(WorkerState.CANCELLING)
-    
+
     @pyqtSlot()
     def run(self) -> None:
         """
@@ -159,10 +152,10 @@ class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
         """
         self.state = WorkerState.RUNNING
         self.signals.started.emit()
-        
+
         try:
             result = self.do_work()
-            
+
             if self.is_cancelled:
                 self.state = WorkerState.CANCELLED
                 self.signals.cancelled.emit()
@@ -170,12 +163,12 @@ class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
                 self._result = result
                 self.state = WorkerState.COMPLETED
                 self.signals.finished.emit(result)
-                
+
         except Exception as e:
             self._error = (type(e).__name__, str(e))
             self.state = WorkerState.FAILED
             self.signals.error.emit(type(e).__name__, str(e))
-    
+
     @abstractmethod
     def do_work(self) -> Any:
         """
@@ -188,7 +181,7 @@ class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
             The result of the work.
         """
         pass
-    
+
     def report_progress(
         self,
         current: int,
@@ -197,15 +190,15 @@ class BaseWorker(QObject, ABC, metaclass=WorkerMeta):
     ) -> None:
         """Report progress to the UI thread."""
         self.signals.progress.emit(current, total, message)
-    
+
     def report_progress_detail(self, info: ProgressInfo) -> None:
         """Report detailed progress."""
         self.signals.progress_detail.emit(info)
-    
+
     def report_status(self, message: str) -> None:
         """Report a status message."""
         self.signals.status.emit(message)
-    
+
     def check_cancelled(self) -> bool:
         """
         Check if cancelled and raise if so.
@@ -228,12 +221,12 @@ class CancellableWorker(BaseWorker):
     
     Provides helper methods for periodic cancellation checks.
     """
-    
+
     def __init__(self, check_interval: int = 100, parent: Optional[QObject] = None):
         super().__init__(parent)
         self._check_interval = check_interval
         self._operation_count = 0
-    
+
     def maybe_check_cancelled(self) -> bool:
         """
         Periodically check for cancellation.
@@ -255,12 +248,12 @@ class RunnableWorker(QRunnable):
     More lightweight than QThread-based workers,
     suitable for many small tasks.
     """
-    
+
     def __init__(
         self,
-        func: Callable[..., T],
-        *args,
-        **kwargs
+        func: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any
     ):
         super().__init__()
         self.func = func
@@ -269,7 +262,7 @@ class RunnableWorker(QRunnable):
         self.signals = WorkerSignals()
         self._cancelled = False
         self.setAutoDelete(True)
-    
+
     @pyqtSlot()
     def run(self) -> None:
         """Execute the function."""
@@ -279,7 +272,7 @@ class RunnableWorker(QRunnable):
                 self.signals.finished.emit(result)
         except Exception as e:
             self.signals.error.emit(type(e).__name__, str(e))
-    
+
     def cancel(self) -> None:
         """Request cancellation."""
         self._cancelled = True
@@ -295,7 +288,7 @@ class WorkerThread(QThread):
         # Worker runs in thread
         thread.wait()  # Wait for completion
     """
-    
+
     def __init__(
         self,
         worker: BaseWorker,
@@ -304,22 +297,22 @@ class WorkerThread(QThread):
         super().__init__(parent)
         self.worker = worker
         self.worker.moveToThread(self)
-        
+
         # Connect signals
         self.started.connect(self.worker.run)
         self.worker.signals.finished.connect(self.quit)
         self.worker.signals.error.connect(self.quit)
         self.worker.signals.cancelled.connect(self.quit)
-    
+
     def cancel(self) -> None:
         """Cancel the worker."""
         self.worker.cancel()
-    
+
     @property
     def result(self) -> Any:
         """Get the worker's result."""
         return self.worker.result
-    
+
     @property
     def error(self) -> Optional[tuple[str, str]]:
         """Get error info if failed."""
@@ -332,7 +325,7 @@ class ChainedWorker(BaseWorker):
     
     Executes workers in sequence, passing results between them.
     """
-    
+
     def __init__(
         self,
         workers: list[BaseWorker],
@@ -341,28 +334,28 @@ class ChainedWorker(BaseWorker):
         super().__init__(parent)
         self.workers = workers
         self._current_worker_index = 0
-    
+
     def do_work(self) -> list[Any]:
         """Execute all workers in sequence."""
         results = []
-        
+
         for i, worker in enumerate(self.workers):
             if self.is_cancelled:
                 break
-            
+
             self._current_worker_index = i
             self.report_status(f"Step {i + 1}/{len(self.workers)}")
-            
+
             # Run worker synchronously
             result = worker.do_work()
             results.append(result)
-            
+
             if worker.is_cancelled:
                 self.cancel()
                 break
-        
+
         return results
-    
+
     def cancel(self) -> None:
         """Cancel current and pending workers."""
         super().cancel()

@@ -10,45 +10,48 @@ Provides specialized widgets for:
 - Syntax highlighting
 """
 
+from app.ui.widgets.collapsible_panel import (
+    CollapsiblePanel,
+    CollapsibleSection,
+)
 from app.ui.widgets.diff_text_edit import (
     DiffTextEdit,
+    DiffViewMode,
     SideBySideDiffWidget,
     UnifiedDiffWidget,
-    DiffViewMode,
+)
+from app.ui.widgets.file_tree_widget import (
+    FileFilterProxyModel,
+    FileTreeItem,
+    FileTreeModel,
+    FileTreeWidget,
 )
 from app.ui.widgets.line_number_widget import (
     LineNumberWidget,
 )
-from app.ui.widgets.file_tree_widget import (
-    FileTreeWidget,
-    FileTreeModel,
-    FileTreeItem,
-    FileFilterProxyModel,
-)
 from app.ui.widgets.path_selector import (
-    PathSelector,
     DualPathSelector,
     PathHistoryCombo,
-)
-from app.ui.widgets.status_widget import (
-    StatusIndicator,
-    CompareStatusBar,
-    ProgressWidget,
-    FileInfoWidget,
+    PathSelector,
 )
 from app.ui.widgets.search_widget import (
-    SearchWidget,
     FindReplaceWidget,
+    SearchWidget,
+)
+from app.ui.widgets.status_widget import (
+    CompareStatusBar,
+    FileInfoWidget,
+    ProgressWidget,
+    StatusIndicator,
+)
+from app.ui.widgets.syntax_highlighter import (
+    DiffAwareSyntaxHighlighter as DiffSyntaxHighlighter,
 )
 from app.ui.widgets.syntax_highlighter import (
     SyntaxHighlighter,
-    DiffAwareSyntaxHighlighter as DiffSyntaxHighlighter,
-    create_highlighter_for_file as get_highlighter_for_file,
 )
-
-from app.ui.widgets.collapsible_panel import (
-    CollapsiblePanel,
-    CollapsibleSection,
+from app.ui.widgets.syntax_highlighter import (
+    create_highlighter_for_file as get_highlighter_for_file,
 )
 
 __all__ = [

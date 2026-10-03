@@ -25,21 +25,24 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Optional, List, NoReturn
+from types import TracebackType
+from typing import List, Optional
 
 from PyQt6.QtCore import (
-    Qt, QSettings, QTranslator, QLocale, QLibraryInfo,
-    QSharedMemory, QTimer, QThread, QCoreApplication, QByteArray
+    QByteArray,
+    QLibraryInfo,
+    QLocale,
+    QSettings,
+    QSharedMemory,
+    Qt,
+    QTimer,
+    QTranslator,
 )
-from PyQt6.QtGui import (
-    QFont, QFontDatabase, QIcon, QPalette, QColor, QPixmap
-)
-from PyQt6.QtWidgets import (
-    QApplication, QMessageBox, QSplashScreen, QStyleFactory
-)
+from PyQt6.QtGui import QColor, QFontDatabase, QIcon, QPalette, QPixmap
+from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen, QStyleFactory
 
+from app.services.settings import Theme
 from app.ui import resources
-
 
 # =============================================================================
 # Constants
@@ -47,7 +50,7 @@ from app.ui import resources
 
 APP_NAME = "FileCompare"
 APP_DISPLAY_NAME = "File Compare"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 APP_ORGANIZATION = "FileCompare"
 APP_DOMAIN = "filecompare.example.com"
 
@@ -76,9 +79,6 @@ class StartupMode(Enum):
     FOLDER_COMPARE = auto()
     MERGE = auto()
     LAST_SESSION = auto()
-
-
-from app.services.settings import Theme
 
 
 # =============================================================================
@@ -201,9 +201,9 @@ class ExceptionHandler:
     
     def handle_exception(
         self,
-        exc_type: type,
+        exc_type: type[BaseException],
         exc_value: BaseException,
-        exc_tb
+        exc_tb: Optional[TracebackType]
     ) -> None:
         """Handle an unhandled exception."""
         # Don't handle keyboard interrupt
@@ -227,7 +227,7 @@ class ExceptionHandler:
     
     def _show_error_dialog(
         self,
-        exc_type: type,
+        exc_type: type[BaseException],
         exc_value: BaseException,
         traceback_text: str
     ) -> None:
@@ -493,8 +493,9 @@ Examples:
 def create_desktop_shortcut():
     """Create a desktop shortcut for the application."""
     try:
-        import win32com.client
         from pathlib import Path
+
+        import win32com.client
         
         # Get paths
         if getattr(sys, 'frozen', False):
@@ -1210,13 +1211,6 @@ def cleanup(
     if instance_guard:
         instance_guard.release()
     
-    # Clean up temporary files
-    try:
-        from app.services.file_io import TempFileManager
-        # Note: Actual cleanup would be done by context manager
-    except ImportError:
-        pass
-    
     logger.info("Cleanup complete")
 
 
@@ -1262,7 +1256,7 @@ def main() -> int:
             
             # TODO: Send arguments to existing instance
             # For now, just show a message
-            temp_app = QApplication(sys.argv)
+            _app = QApplication(sys.argv)
             QMessageBox.warning(
                 None,
                 APP_NAME,
@@ -1280,7 +1274,7 @@ def main() -> int:
         
         # Setup
         update_splash(splash, "Loading settings...")
-        settings = setup_settings(args)
+        setup_settings(args)
         
         update_splash(splash, "Setting up fonts...")
         setup_fonts(app)

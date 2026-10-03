@@ -27,7 +27,7 @@
 
 ## Overview
 
-TwinScope is a cross-platform file and folder comparison tool inspired by Beyond Compare. Built with Python and PyQt6, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees. It includes advanced features like three-way merging, folder synchronization, and report generation.
+TwinScope is a cross-platform file and folder comparison tool inspired by Beyond Compare. Built with Python, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees. It includes advanced features like three-way merging, folder synchronization, and report generation.
 
 ## Features
 
@@ -67,7 +67,6 @@ TwinScope is a cross-platform file and folder comparison tool inspired by Beyond
 ### Requirements
 
 - Python 3.10 or newer
-- PyQt6 6.4 or newer
 
 ### Install from Source
 
@@ -103,7 +102,7 @@ python main.py [left_path] [right_path]
 ```
 
 ### Windows Installer (.msi)
-Download `TwinScope_Setup_1.1.0.msi`:
+Download `TwinScope_Setup_1.2.0.msi`:
 Download Code Verification Certificate: [Dipta Roy - Code Verification Certificate](https://github.com/dipta-roy/dipta-roy.github.io/blob/main/downloads/Code%20Verifying%20Certificates.zip).
 ```
 - HOW TO TRUST
@@ -125,7 +124,7 @@ Download Code Verification Certificate: [Dipta Roy - Code Verification Certifica
 
 Once verified,
 ```
-Run TwinScope_Setup_1.1.0.msi and install the application.
+Run TwinScope_Setup_1.2.0.msi and install the application.
 ```
 
 
@@ -176,7 +175,7 @@ TwinScope uses `cx_Freeze` to package the application into a Windows MSI install
    - **Step 2**: It builds the core executables and binaries into the `build/` directory.
    - **Pause for Signing (Optional)**: The script will pause. If you have a code-signing certificate, you can sign `build\exe.win-amd64-3.11\TwinScope.exe` at this point to avoid "Unknown Publisher" warnings.
    - **Step 3**: Press any key to continue. The script will package the binaries into an `.msi` installer.
-4. **Output**: The final installer (`TwinScope_Setup_1.1.0.msi`) will be located in the `dist/` directory.
+4. **Output**: The final installer (`TwinScope_Setup_1.2.0.msi`) will be located in the `dist/` directory.
 
 ### Customizing the Build
 The build configuration is managed in `installer/setup_msi.py`. You can modify `build_exe_options` or `bdist_msi_options` to change included files, dependencies, or installer metadata (like the upgrade code or version).

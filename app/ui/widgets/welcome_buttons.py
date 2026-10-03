@@ -1,7 +1,17 @@
-from PyQt6.QtWidgets import QPushButton, QVBoxLayout, QLabel, QWidget, QApplication, QStyle, QSizePolicy
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QIcon
 from typing import Optional
+
+from PyQt6.QtCore import QSize, Qt
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+)
+
 
 class WelcomeButton(QPushButton):
     """
@@ -9,54 +19,54 @@ class WelcomeButton(QPushButton):
     """
     def __init__(self, title: str, description: str, icon_name: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        
+
         self.setMinimumSize(180, 120) # Adjusted size
         self.setMaximumWidth(250)
         self.setSizePolicy(QSizePolicy.Policy.MinimumExpanding, QSizePolicy.Policy.MinimumExpanding)
-        
+
         # Internal layout for icon, title, and description
         layout = QVBoxLayout(self)
         layout.setSpacing(5)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         # Icon
         icon_label = QLabel()
         icon = self._get_icon(icon_name)
         icon_label.setPixmap(icon.pixmap(QSize(48, 48)))
         icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(icon_label)
-        
+
         # Title
         title_label = QLabel(title)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(title_label)
-        
+
         # Description
         description_label = QLabel(description)
         description_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description_label.setWordWrap(True)
         description_label.setStyleSheet("font-size: 10px; color: palette(text);") # Use palette text color
         layout.addWidget(description_label)
-        
+
         # Store for theme updates
         self._title_label = title_label
         self._description_label = description_label
         self._icon_label = icon_label
-        
+
         # Apply initial styling
         self.update_theme_style()
-    
+
     def update_theme_style(self) -> None:
         """Update button styling based on current theme."""
         from app.services.settings import SettingsManager
         settings = SettingsManager().settings
         theme = settings.ui.theme
-        
+
         # Check if dark theme or custom theme
         theme_str = str(theme).lower()
         is_dark = theme_str.endswith('dark') or theme_str.endswith('custom')
-        
+
         if is_dark:
             self.setStyleSheet("""
                 WelcomeButton {
@@ -100,10 +110,11 @@ class WelcomeButton(QPushButton):
     def _get_icon(self, icon_name: str) -> QIcon:
         """Helper to get QIcon from name."""
         style = QApplication.style()
-        if icon_name == "document-compare":
-            return style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
-        elif icon_name == "folder-compare":
-            return style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        elif icon_name == "merge":
-            return style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton) # Placeholder, ideally custom icon
+        if style is not None:
+            if icon_name == "document-compare":
+                return style.standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+            elif icon_name == "folder-compare":
+                return style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+            elif icon_name == "merge":
+                return style.standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton) # Placeholder, ideally custom icon
         return QIcon() # Fallback empty icon

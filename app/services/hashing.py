@@ -5,11 +5,12 @@ Hashing service for file integrity verification.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import BinaryIO, Callable, Iterator, Optional
+from typing import Callable, Optional
 
 
 class HashAlgorithm(Enum):
@@ -19,7 +20,7 @@ class HashAlgorithm(Enum):
     SHA256 = auto()
     SHA512 = auto()
     XXH64 = auto()  # Fast non-cryptographic hash
-    
+
     @property
     def name(self) -> str:
         return self._name_.lower()
@@ -32,10 +33,10 @@ class HashResult:
     hash_hex: str
     hash_bytes: bytes
     file_size: int
-    
+
     def matches(self, other: 'HashResult') -> bool:
         """Check if this hash matches another."""
-        return (self.algorithm == other.algorithm and 
+        return (self.algorithm == other.algorithm and
                 self.hash_hex == other.hash_hex)
 
 
@@ -50,7 +51,7 @@ class HashProgress:
 
 class HashingService:
     """Service for computing file hashes."""
-    
+
     def __init__(
         self,
         default_algorithm: HashAlgorithm = HashAlgorithm.SHA256,
@@ -58,14 +59,10 @@ class HashingService:
     ):
         self.default_algorithm = default_algorithm
         self.chunk_size = chunk_size
-        
-        # Try to import xxhash for fast hashing
-        try:
-            import xxhash
-            self._xxhash_available = True
-        except ImportError:
-            self._xxhash_available = False
-    
+
+        # Check if xxhash is available for fast hashing
+        self._xxhash_available = importlib.util.find_spec("xxhash") is not None
+
     def hash_file(
         self,
         path: Path | str,
@@ -85,17 +82,17 @@ class HashingService:
         """
         path = Path(path)
         algorithm = algorithm or self.default_algorithm
-        
+
         file_size = path.stat().st_size
         hasher = self._create_hasher(algorithm)
-        
+
         bytes_processed = 0
-        
+
         with open(path, 'rb') as f:
             while chunk := f.read(self.chunk_size):
                 hasher.update(chunk)
                 bytes_processed += len(chunk)
-                
+
                 if progress_callback:
                     progress = HashProgress(
                         bytes_processed=bytes_processed,
@@ -104,21 +101,21 @@ class HashingService:
                         file_path=path
                     )
                     progress_callback(progress)
-        
+
         if algorithm == HashAlgorithm.XXH64:
             hash_hex = hasher.hexdigest()
             hash_bytes = hasher.digest()
         else:
             hash_hex = hasher.hexdigest()
             hash_bytes = hasher.digest()
-        
+
         return HashResult(
             algorithm=algorithm,
             hash_hex=hash_hex,
             hash_bytes=hash_bytes,
             file_size=file_size
         )
-    
+
     def hash_bytes(
         self,
         data: bytes,
@@ -128,14 +125,14 @@ class HashingService:
         algorithm = algorithm or self.default_algorithm
         hasher = self._create_hasher(algorithm)
         hasher.update(data)
-        
+
         return HashResult(
             algorithm=algorithm,
             hash_hex=hasher.hexdigest(),
             hash_bytes=hasher.digest(),
             file_size=len(data)
         )
-    
+
     def hash_string(
         self,
         text: str,
@@ -144,7 +141,7 @@ class HashingService:
     ) -> HashResult:
         """Compute hash of a string."""
         return self.hash_bytes(text.encode(encoding), algorithm)
-    
+
     def compare_files_by_hash(
         self,
         path1: Path | str,
@@ -155,7 +152,7 @@ class HashingService:
         hash1 = self.hash_file(path1, algorithm)
         hash2 = self.hash_file(path2, algorithm)
         return hash1.matches(hash2)
-    
+
     def verify_hash(
         self,
         path: Path | str,
@@ -165,7 +162,7 @@ class HashingService:
         """Verify a file's hash against an expected value."""
         result = self.hash_file(path, algorithm)
         return result.hash_hex.lower() == expected_hash.lower()
-    
+
     def hash_directory(
         self,
         path: Path | str,
@@ -187,32 +184,32 @@ class HashingService:
         """
         path = Path(path)
         algorithm = algorithm or self.default_algorithm
-        
+
         # Collect all files
         files: list[Path] = []
         for root, dirs, filenames in os.walk(path):
             dirs.sort()  # Consistent ordering
             for filename in sorted(filenames):
                 files.append(Path(root) / filename)
-        
+
         # Calculate total size
         total_size = sum(f.stat().st_size for f in files)
         bytes_processed = 0
-        
+
         # Hash all files
         combined_hasher = self._create_hasher(algorithm)
-        
+
         for file_path in files:
             if include_names:
                 # Include relative path in hash
                 rel_path = file_path.relative_to(path)
                 combined_hasher.update(str(rel_path).encode('utf-8'))
-            
+
             file_hash = self.hash_file(file_path, algorithm)
             combined_hasher.update(file_hash.hash_bytes)
-            
+
             bytes_processed += file_hash.file_size
-            
+
             if progress_callback:
                 progress = HashProgress(
                     bytes_processed=bytes_processed,
@@ -221,20 +218,20 @@ class HashingService:
                     file_path=file_path
                 )
                 progress_callback(progress)
-        
+
         return HashResult(
             algorithm=algorithm,
             hash_hex=combined_hasher.hexdigest(),
             hash_bytes=combined_hasher.digest(),
             file_size=total_size
         )
-    
+
     def _create_hasher(self, algorithm: HashAlgorithm):
         """Create a hasher for the given algorithm."""
         if algorithm == HashAlgorithm.MD5:
-            return hashlib.md5()
+            return hashlib.md5(usedforsecurity=False)
         elif algorithm == HashAlgorithm.SHA1:
-            return hashlib.sha1()
+            return hashlib.sha1(usedforsecurity=False)
         elif algorithm == HashAlgorithm.SHA256:
             return hashlib.sha256()
         elif algorithm == HashAlgorithm.SHA512:
@@ -256,7 +253,7 @@ class IncrementalHasher:
     
     Useful for hashing large files or network streams.
     """
-    
+
     def __init__(
         self,
         algorithm: HashAlgorithm = HashAlgorithm.SHA256
@@ -265,12 +262,12 @@ class IncrementalHasher:
         self._service = HashingService()
         self._hasher = self._service._create_hasher(algorithm)
         self._size = 0
-    
+
     def update(self, data: bytes) -> None:
         """Add data to the hash."""
         self._hasher.update(data)
         self._size += len(data)
-    
+
     def finalize(self) -> HashResult:
         """Finalize and return the hash result."""
         return HashResult(
@@ -279,7 +276,7 @@ class IncrementalHasher:
             hash_bytes=self._hasher.digest(),
             file_size=self._size
         )
-    
+
     def copy(self) -> 'IncrementalHasher':
         """Create a copy of the current state."""
         new_hasher = IncrementalHasher(self.algorithm)

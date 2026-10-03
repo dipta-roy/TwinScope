@@ -1,6 +1,7 @@
-import sys
 import os
-from cx_Freeze import setup, Executable
+import sys
+
+from cx_Freeze import Executable, setup
 
 # Add the current directory to sys.path so that cx_Freeze can find the 'app' package
 sys.path.append(os.getcwd())
@@ -18,7 +19,7 @@ UPGRADE_CODE = "{A8271C53-96B3-4197-8CFD-ACAEB2460786}"
 
 # Build Options
 build_exe_options = {
-    "packages": ["os", "sys", "ctypes", "win32com.client", "app"],
+    "packages": ["os", "sys", "ctypes", "win32com.client", "app", "chardet", "defusedxml", "pypdf", "docx", "openpyxl", "pptx", "PIL"],
     "excludes": ["tkinter", "unittest", "email", "xmlrpc"],
     "include_files": [
         (icon_path, "images/app_icon.ico"),
@@ -35,7 +36,7 @@ bdist_msi_options = {
     "upgrade_code": UPGRADE_CODE,
     "initial_target_dir": r"[ProgramFilesFolder]\TwinScope",
     "install_icon": icon_path,
-    "target_name": "TwinScope_Setup_1.1.0.msi",
+    "target_name": "TwinScope_Setup_1.2.0.msi",
 }
 
 # Executable Configuration
@@ -50,9 +51,9 @@ target = Executable(
 
 setup(
     name="TwinScope",
-    version="1.1.0",
+    version="1.2.0",
     description="Professional File Comparison Tool",
-    author="TwinScope Team",
+    author="Dipta Roy",
     options={
         "build_exe": build_exe_options,
         "bdist_msi": bdist_msi_options,

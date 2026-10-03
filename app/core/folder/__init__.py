@@ -8,15 +8,17 @@ Provides functionality for:
 - Synchronization planning
 """
 
-from app.core.folder.scanner import (
-    FolderScanner,
-    ScanOptions,
-    ScanResult,
-    PatternMatcher,
+from app.core.folder.comparer import (
+    CompareOptions as FolderCompareOptions,
 )
 from app.core.folder.comparer import (
     FolderComparer,
-    CompareOptions as FolderCompareOptions,
+)
+from app.core.folder.scanner import (
+    FolderScanner,
+    PatternMatcher,
+    ScanOptions,
+    ScanResult,
 )
 from app.core.folder.sync import (
     FolderSync,

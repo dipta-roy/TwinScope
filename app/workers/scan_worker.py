@@ -4,14 +4,15 @@ Workers for directory scanning operations.
 
 from __future__ import annotations
 
-from pathlib import Path
 import logging
-from typing import Optional, Callable
+from pathlib import Path
+from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from app.workers.base_worker import BaseWorker, CancellableWorker, ProgressInfo
 from app.core.folder.scanner import FolderScanner, ScanOptions, ScanResult
+from app.core.models import FileMetadata
+from app.workers.base_worker import BaseWorker, CancellableWorker, ProgressInfo
 
 
 class FolderScanWorker(CancellableWorker):
@@ -20,10 +21,10 @@ class FolderScanWorker(CancellableWorker):
     
     Reports progress as files are discovered.
     """
-    
+
     # Signal emitted for each file found (for live updates)
     file_found = pyqtSignal(str, object)  # (relative_path, FileMetadata)
-    
+
     def __init__(
         self,
         path: str | Path,
@@ -36,36 +37,37 @@ class FolderScanWorker(CancellableWorker):
         self.options = options or ScanOptions()
         self.emit_files = emit_files
         self._scanner: Optional[FolderScanner] = None
-    
+
     def do_work(self) -> ScanResult:
         """Perform directory scan."""
         self.report_status(f"Scanning {self.path.name}...")
-        
+
         self._scanner = FolderScanner(self.options)
-        
+
         def progress_callback(progress) -> None:
             if self.is_cancelled:
-                self._scanner.cancel()
+                if self._scanner is not None:
+                    self._scanner.cancel()
                 return
-            
+
             self.report_progress_detail(ProgressInfo(
                 current=progress.files_found,
                 total=0,  # Unknown total during scan
                 message=f"Found {progress.files_found} files",
                 detail=progress.current_path
             ))
-        
+
         result = self._scanner.scan(self.path, progress_callback)
-        
+
         # Emit individual files if requested
         if self.emit_files:
             for rel_path, metadata in result.files.items():
                 if self.is_cancelled:
                     break
                 self.file_found.emit(rel_path, metadata)
-        
+
         return result
-    
+
     def cancel(self) -> None:
         """Cancel the scan."""
         super().cancel()
@@ -77,10 +79,10 @@ class BatchScanWorker(CancellableWorker):
     """
     Worker for scanning multiple directories.
     """
-    
+
     # Signal emitted when a directory scan completes
     directory_complete = pyqtSignal(str, object)  # (path, ScanResult)
-    
+
     def __init__(
         self,
         paths: list[str | Path],
@@ -90,26 +92,26 @@ class BatchScanWorker(CancellableWorker):
         super().__init__(parent=parent)
         self.paths = [Path(p) for p in paths]
         self.options = options or ScanOptions()
-    
+
     def do_work(self) -> dict[str, ScanResult]:
         """Scan all directories."""
         results: dict[str, ScanResult] = {}
-        
+
         scanner = FolderScanner(self.options)
-        
+
         for i, path in enumerate(self.paths):
             if self.is_cancelled:
                 break
-            
+
             self.report_progress(i, len(self.paths), f"Scanning {path.name}...")
-            
+
             try:
                 result = scanner.scan(path)
                 results[str(path)] = result
                 self.directory_complete.emit(str(path), result)
             except Exception as e:
                 self.report_status(f"Error scanning {path}: {e}")
-        
+
         return results
 
 
@@ -119,7 +121,7 @@ class LazyLoadWorker(BaseWorker):
     
     Used for expanding nodes in a tree view without blocking.
     """
-    
+
     def __init__(
         self,
         path: str | Path,
@@ -129,28 +131,28 @@ class LazyLoadWorker(BaseWorker):
         super().__init__(parent)
         self.path = Path(path)
         self.depth = depth
-    
-    def do_work(self) -> list[tuple[str, object]]:
+
+    def do_work(self) -> list[tuple[str, FileMetadata]]:
         """
         Load immediate children of directory.
         
         Returns list of (name, FileMetadata) tuples.
         """
         from app.core.folder.scanner import FolderScanner, ScanOptions
-        
+
         options = ScanOptions(
             recursive=False,
             max_depth=self.depth,
         )
-        
+
         scanner = FolderScanner(options)
-        
+
         children = []
         for rel_path, metadata in scanner.scan_lazy(self.path):
             if self.is_cancelled:
                 break
             children.append((rel_path, metadata))
-        
+
         return children
 
 
@@ -161,10 +163,10 @@ class FileWatcherWorker(BaseWorker):
     Uses polling (cross-platform compatible).
     For production, consider using watchdog library.
     """
-    
+
     # Signal emitted when a change is detected
     change_detected = pyqtSignal(str, str)  # (path, change_type)
-    
+
     def __init__(
         self,
         paths: list[str | Path],
@@ -175,24 +177,24 @@ class FileWatcherWorker(BaseWorker):
         self.paths = [Path(p) for p in paths]
         self.interval = interval
         self._file_states: dict[str, tuple[float, int]] = {}  # path -> (mtime, size)
-    
+
     def do_work(self) -> None:
         """Watch for changes continuously."""
         import time
-        
+
         # Initial scan
         self._update_states()
-        
+
         while not self.is_cancelled:
             time.sleep(self.interval)
-            
+
             if self.is_cancelled:
                 break
-            
+
             changes = self._check_changes()
             for path, change_type in changes:
                 self.change_detected.emit(path, change_type)
-    
+
     def _update_states(self) -> None:
         """Update known file states."""
         for path in self.paths:
@@ -200,7 +202,7 @@ class FileWatcherWorker(BaseWorker):
                 self._scan_directory(path)
             else:
                 self._record_file(path)
-    
+
     def _scan_directory(self, dir_path: Path) -> None:
         """Scan directory for files."""
         try:
@@ -209,7 +211,7 @@ class FileWatcherWorker(BaseWorker):
                     self._record_file(item)
         except PermissionError as e:
             logging.warning(f"FileWatcherWorker - Permission denied scanning directory {dir_path}: {e}")
-    
+
     def _record_file(self, path: Path) -> None:
         """Record file state."""
         try:
@@ -217,12 +219,12 @@ class FileWatcherWorker(BaseWorker):
             self._file_states[str(path)] = (stat.st_mtime, stat.st_size)
         except OSError as e:
             logging.debug(f"FileWatcherWorker - Failed to record file {path}: {e}")
-    
+
     def _check_changes(self) -> list[tuple[str, str]]:
         """Check for changes since last check."""
         changes = []
         current_files: set[str] = set()
-        
+
         for path in self.paths:
             if path.is_dir():
                 try:
@@ -239,32 +241,32 @@ class FileWatcherWorker(BaseWorker):
                 change = self._check_file(path)
                 if change:
                     changes.append((str(path), change))
-        
+
         # Check for deleted files
-        for path in list(self._file_states.keys()):
-            if path not in current_files:
-                del self._file_states[path]
-                changes.append((path, 'deleted'))
-        
+        for tracked_path in list(self._file_states.keys()):
+            if tracked_path not in current_files:
+                del self._file_states[tracked_path]
+                changes.append((tracked_path, 'deleted'))
+
         return changes
-    
+
     def _check_file(self, path: Path) -> Optional[str]:
         """Check single file for changes."""
         try:
             stat = path.stat()
             current = (stat.st_mtime, stat.st_size)
-            
+
             str_path = str(path)
             if str_path not in self._file_states:
                 self._file_states[str_path] = current
                 return 'created'
-            
+
             if self._file_states[str_path] != current:
                 self._file_states[str_path] = current
                 return 'modified'
-            
+
             return None
-            
+
         except OSError:
             if str(path) in self._file_states:
                 del self._file_states[str(path)]
