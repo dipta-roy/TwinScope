@@ -7,9 +7,9 @@ Provides tree-based display of folder comparison results.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
-from PyQt6.QtCore import QModelIndex, QPoint, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QModelIndex, QPoint, QRect, QTimer, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QColor, QFont, QPainter
 from PyQt6.QtWidgets import (
     QComboBox,
@@ -43,19 +43,24 @@ class FolderCompareDelegate(QStyledItemDelegate):
         self._colors = colors
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
-        status = index.data(Qt.ItemDataRole.UserRole + 1) # Get the FileStatus
+        status = index.data(Qt.ItemDataRole.UserRole + 1)  # Get the FileStatus
 
         # Draw background based on status
+        color: Optional[str] = None
         if status == FileStatus.IDENTICAL:
-            painter.fillRect(option.rect, QColor(self._colors.folder_identical_color))
+            color = self._colors.folder_identical_color
         elif status == FileStatus.MODIFIED:
-            painter.fillRect(option.rect, QColor(self._colors.folder_modified_color))
+            color = self._colors.folder_modified_color
         elif status == FileStatus.LEFT_ONLY:
-            painter.fillRect(option.rect, QColor(self._colors.folder_left_only_color))
+            color = self._colors.folder_left_only_color
         elif status == FileStatus.RIGHT_ONLY:
-            painter.fillRect(option.rect, QColor(self._colors.folder_right_only_color))
-        elif status == FileStatus.CONFLICT: # Assuming CONFLICT might be a status
-            painter.fillRect(option.rect, QColor(self._colors.folder_conflict_color))
+            color = self._colors.folder_right_only_color
+        elif status == FileStatus.CONFLICT:
+            color = self._colors.folder_conflict_color
+
+        if color:
+            rect = cast(QRect, option.rect)
+            painter.fillRect(rect, QColor(color))
 
         # Call the base class paint to draw text, icons, etc.
         super().paint(painter, option, index)
@@ -152,12 +157,19 @@ class FolderCompareView(QWidget):
 
         toolbar.addSeparator()
 
-        # Search box
+        # Search box with debounce timer
         self._search_box = QLineEdit()
         self._search_box.setPlaceholderText("Search files...")
         self._search_box.setClearButtonEnabled(True)
-        self._search_box.textChanged.connect(self._on_search_changed)
         self._search_box.setMaximumWidth(200)
+
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(200)
+        self._search_timer.timeout.connect(self._apply_search)
+
+        self._search_box.textChanged.connect(self._on_search_changed)
+        self._search_box.returnPressed.connect(self._apply_search)
         toolbar.addWidget(self._search_box)
 
         toolbar.addSeparator()
@@ -323,9 +335,21 @@ class FolderCompareView(QWidget):
 
     @pyqtSlot(str)
     def _on_search_changed(self, text: str) -> None:
-        """Handle search text change."""
+        """Handle search text change with debounce."""
+        if not text.strip():
+            self._apply_search()
+        else:
+            self._search_timer.start()
+
+    @pyqtSlot()
+    def _apply_search(self) -> None:
+        """Apply search filter to proxy model."""
+        self._search_timer.stop()
         if self._proxy_model:
-            self._proxy_model.set_name_filter(text)
+            search_text = self._search_box.text().strip()
+            self._proxy_model.set_name_filter(search_text)
+            if search_text:
+                self._tree_view.expandAll()
 
     @pyqtSlot()
     def _on_expand_all(self) -> None:

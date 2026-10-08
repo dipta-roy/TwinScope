@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from app.constants.constants import IMAGE_EXTENSIONS
 from app.core.folder.scanner import FolderScanner, ScanOptions, ScanResult
 from app.core.models import (
     CompareMethod,
@@ -39,6 +40,7 @@ class CompareOptions:
     use_hash: bool = True
     hash_algorithm: str = 'sha256'
     quick_compare: bool = True  # Use size + mtime before content
+    calculate_similarity: bool = False  # Defer eager similarity calculation to improve scan speed
 
     # Content comparison options
     ignore_line_endings: bool = True
@@ -399,7 +401,7 @@ class FolderComparer:
             # Size check
             if left_meta.size != right_meta.size:
                 similarity = 0.0
-                if self.options.compare_contents and left_meta.size < 1024 * 1024:
+                if self.options.calculate_similarity and self.options.compare_contents and left_meta.size < 1024 * 1024:
                     similarity = self._calculate_similarity(left_path, right_path)
 
                 return FileCompareResult(
@@ -430,7 +432,7 @@ class FolderComparer:
                       left_meta.modified_time == right_meta.modified_time)
 
             similarity = 1.0 if is_same else 0.0
-            if not is_same and self.options.compare_contents and left_meta.size < 1024 * 1024:
+            if not is_same and self.options.calculate_similarity and self.options.compare_contents and left_meta.size < 1024 * 1024:
                 similarity = self._calculate_similarity(left_path, right_path)
 
             return FileCompareResult(
@@ -446,15 +448,15 @@ class FolderComparer:
         if self.options.compare_contents:
             if self.options.use_hash:
                 compare_method = CompareMethod.HASH
-                is_identical = self._compare_by_hash(left_path, right_path)
+                is_identical = self._compare_by_hash(left_path, right_path, left_meta.size)
             else:
                 compare_method = CompareMethod.CONTENT
-                is_identical = self._compare_by_content(left_path, right_path)
+                is_identical = self._compare_by_content(left_path, right_path, left_meta.size)
 
             status = FileStatus.IDENTICAL if is_identical else FileStatus.MODIFIED
             similarity = 1.0 if is_identical else 0.0
 
-            if not is_identical and self.options.compare_contents and left_meta.size < 1024 * 1024:
+            if not is_identical and self.options.calculate_similarity and self.options.compare_contents and left_meta.size < 1024 * 1024:
                 similarity = self._calculate_similarity(left_path, right_path)
 
             return FileCompareResult(
@@ -468,7 +470,7 @@ class FolderComparer:
 
         # Default: identical if same size
         similarity = 1.0 if left_meta.size == right_meta.size else 0.0
-        if similarity == 0.0 and self.options.compare_contents and left_meta.size < 1024 * 1024:
+        if similarity == 0.0 and self.options.calculate_similarity and self.options.compare_contents and left_meta.size < 1024 * 1024:
             similarity = self._calculate_similarity(left_path, right_path)
 
         return FileCompareResult(
@@ -487,14 +489,17 @@ class FolderComparer:
             io_service = FileIOService()
 
             # Check if it's an image extension
-            IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.svg'}
             if left_path.suffix.lower() in IMAGE_EXTENSIONS:
                 try:
                     from app.core.diff.image_diff import ImageDiffEngine
                     engine = ImageDiffEngine()
                     res = engine.compare(left_path, right_path)
                     return res.similarity
-                except ImportError:
+                except ImportError as e:
+                    logging.debug(f"FolderComparer - Image comparison unavailable (missing PIL): {e}")
+                    return 0.0
+                except (IOError, ValueError, OSError) as e:
+                    logging.warning(f"FolderComparer - Image diff failed for {left_path} vs {right_path}: {e}")
                     return 0.0
 
             # Try to read as text or document
@@ -502,18 +507,66 @@ class FolderComparer:
             res2 = io_service.read_file(right_path)
 
             if res1.success and res2.success and res1.content and res2.content:
+                lines1 = res1.content.lines
+                lines2 = res2.content.lines
+                len1 = len(lines1)
+                len2 = len(lines2)
+                if len1 == 0 and len2 == 0:
+                    return 1.0
+                if len1 == 0 or len2 == 0:
+                    return 0.0
+
+                # Fast O(N) line multiset similarity (Dice coefficient) for larger files
+                if len1 + len2 > 200:
+                    from collections import Counter
+                    c1 = Counter(lines1)
+                    c2 = Counter(lines2)
+                    common = sum(min(c1[k], c2[k]) for k in c1 if k in c2)
+                    return (2.0 * common) / (len1 + len2)
+
                 import difflib
-                # Use faster similarity calculation if possible, but ratio() is standard
-                matcher = difflib.SequenceMatcher(None, res1.content.lines, res2.content.lines)
+                matcher = difflib.SequenceMatcher(None, lines1, lines2)
                 return matcher.ratio()
 
             return 0.0
+        except (PermissionError, FileNotFoundError) as e:
+            logging.warning(f"FolderComparer - Access error calculating similarity for {left_path}: {e}")
+            return 0.0
+        except (UnicodeDecodeError, OSError) as e:
+            logging.warning(f"FolderComparer - I/O decode error calculating similarity for {left_path}: {e}")
+            return 0.0
         except Exception as e:
-            logging.debug(f"FolderComparer - Failed to calculate similarity for {left_path}: {e}")
+            logging.error(f"FolderComparer - Unexpected error calculating similarity for {left_path}: {e}", exc_info=True)
             return 0.0
 
-    def _compare_by_content(self, left_path: Path, right_path: Path) -> bool:
-        """Compare files byte-by-byte."""
+    def _compare_head_and_tail(self, left_path: Path, right_path: Path, file_size: int) -> bool:
+        """Quick check comparing the head (first 4KB) and tail (last 4KB) of two files."""
+        sample_size = min(4096, file_size)
+        if sample_size <= 0:
+            return True
+
+        try:
+            with open(left_path, 'rb') as f1, open(right_path, 'rb') as f2:
+                # Check head
+                if f1.read(sample_size) != f2.read(sample_size):
+                    return False
+                # If file fits in one sample, head check is sufficient
+                if file_size <= sample_size:
+                    return True
+                # Check tail
+                f1.seek(file_size - sample_size)
+                f2.seek(file_size - sample_size)
+                if f1.read(sample_size) != f2.read(sample_size):
+                    return False
+            return True
+        except (PermissionError, FileNotFoundError, OSError):
+            return True  # Fall back to full comparison if head/tail check fails
+
+    def _compare_by_content(self, left_path: Path, right_path: Path, file_size: Optional[int] = None) -> bool:
+        """Compare files byte-by-byte with early exit."""
+        if file_size is not None and not self._compare_head_and_tail(left_path, right_path, file_size):
+            return False
+
         try:
             with open(left_path, 'rb') as f1, open(right_path, 'rb') as f2:
                 while True:
@@ -525,18 +578,27 @@ class FolderComparer:
 
                     if not chunk1:  # EOF
                         return True
+        except (PermissionError, FileNotFoundError, OSError) as e:
+            logging.error(f"FolderComparer - I/O error comparing content for {left_path} and {right_path}: {e}")
+            raise
         except Exception as e:
-            logging.error(f"FolderComparer - Error comparing content for {left_path} and {right_path}: {e}")
+            logging.error(f"FolderComparer - Unexpected error comparing content for {left_path} and {right_path}: {e}", exc_info=True)
             raise
 
-    def _compare_by_hash(self, left_path: Path, right_path: Path) -> bool:
-        """Compare files by hash."""
+    def _compare_by_hash(self, left_path: Path, right_path: Path, file_size: Optional[int] = None) -> bool:
+        """Compare files by hash with head/tail early exit."""
+        if file_size is not None and not self._compare_head_and_tail(left_path, right_path, file_size):
+            return False
+
         try:
             left_hash = self._compute_hash(left_path)
             right_hash = self._compute_hash(right_path)
             return left_hash == right_hash
+        except (PermissionError, FileNotFoundError, OSError) as e:
+            logging.error(f"FolderComparer - I/O error comparing hash for {left_path} and {right_path}: {e}")
+            raise
         except Exception as e:
-            logging.error(f"FolderComparer - Error comparing hash for {left_path} and {right_path}: {e}")
+            logging.error(f"FolderComparer - Unexpected error comparing hash for {left_path} and {right_path}: {e}", exc_info=True)
             raise
 
     def _compute_hash(self, path: Path) -> str:
@@ -549,8 +611,11 @@ class FolderComparer:
                     hasher.update(chunk)
 
             return hasher.hexdigest()
+        except (PermissionError, FileNotFoundError, OSError) as e:
+            logging.error(f"FolderComparer - I/O error computing hash for {path}: {e}")
+            raise
         except Exception as e:
-            logging.error(f"FolderComparer - Error computing hash for {path}: {e}")
+            logging.error(f"FolderComparer - Unexpected error computing hash for {path}: {e}", exc_info=True)
             raise
 
     def _build_tree(
@@ -575,9 +640,12 @@ class FolderComparer:
         for rel_path in sorted(results.keys()):
             result = results[rel_path]
 
-            # Find or create parent
-            parent_path = str(Path(rel_path).parent)
-            if parent_path == ".":
+            # Find or create parent using fast string splitting
+            if "/" in rel_path:
+                parent_path = rel_path.rsplit("/", 1)[0]
+            elif "\\" in rel_path:
+                parent_path = rel_path.rsplit("\\", 1)[0]
+            else:
                 parent_path = ""
 
             if parent_path not in nodes:
@@ -602,12 +670,13 @@ class FolderComparer:
         root: FolderCompareNode
     ) -> None:
         """Ensure all parent nodes exist."""
-        parts = Path(path).parts
+        sep = "\\" if "\\" in path else "/"
+        parts = [p for p in path.split(sep) if p]
         current_path = ""
         current_node = root
 
         for part in parts:
-            current_path = str(Path(current_path) / part) if current_path else part
+            current_path = f"{current_path}{sep}{part}" if current_path else part
 
             if current_path not in nodes:
                 # Create directory node

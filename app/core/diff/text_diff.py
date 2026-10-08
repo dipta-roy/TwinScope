@@ -11,13 +11,11 @@ Provides line-by-line comparison with support for:
 """
 
 from __future__ import annotations
-
 import difflib
 import re
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Callable, Iterator, Optional, Sequence
-
 from app.core.models import (
     DiffHunk,
     DiffLine,
@@ -28,14 +26,12 @@ from app.core.models import (
     LinePair,
 )
 
-
 class DiffAlgorithm(Enum):
     """Available diff algorithms."""
     MYERS = auto()          # Standard Myers algorithm (difflib default)
     PATIENCE = auto()       # Patience diff - better for code
     HISTOGRAM = auto()      # Histogram diff - good for large files
     MINIMAL = auto()        # Minimal diff - smallest possible diff
-
 
 class WhitespaceMode(Enum):
     """Whitespace handling modes."""
@@ -44,7 +40,6 @@ class WhitespaceMode(Enum):
     IGNORE_LEADING = auto()   # Ignore leading whitespace
     IGNORE_ALL = auto()       # Ignore all whitespace
     NORMALIZE = auto()        # Normalize whitespace (collapse multiple to single)
-
 
 @dataclass
 class TextCompareOptions:
@@ -83,11 +78,9 @@ class TextCompareOptions:
 
         return result
 
-
 class TextDiffEngine:
     """
-    Engine for comparing text files.
-    
+    Engine for comparing text files.   
     Supports multiple algorithms and extensive options for
     controlling comparison behavior.
     """
@@ -104,7 +97,6 @@ class TextDiffEngine:
     ) -> DiffResult:
         """
         Compare two sequences of lines.
-        
         Args:
             left_lines: Lines from the left/original file
             right_lines: Lines from the right/modified file
@@ -136,7 +128,6 @@ class TextDiffEngine:
         diff_lines: list[DiffLine] = []
         line_pairs: list[LinePair] = []
         hunks: list[DiffHunk] = []
-
         current_hunk_lines: list[DiffLine] = []
         hunk_start_left = 0
         hunk_start_right = 0
@@ -253,9 +244,13 @@ class TextDiffEngine:
         # Calculate statistics
         stats = self._calculate_statistics(diff_lines, len(left_lines), len(right_lines))
 
-        # Calculate similarity
-        matcher = difflib.SequenceMatcher(None, left_normalized, right_normalized)
-        similarity = matcher.ratio()
+        # Calculate similarity directly from opcodes without redundant SequenceMatcher pass
+        total_lines = len(left_normalized) + len(right_normalized)
+        if total_lines == 0:
+            similarity = 1.0
+        else:
+            equal_matches = sum(i2 - i1 for tag, i1, i2, j1, j2 in opcodes if tag == 'equal')
+            similarity = (2.0 * equal_matches) / total_lines
 
         return DiffResult(
             left_path=left_label,
@@ -276,13 +271,11 @@ class TextDiffEngine:
         encoding: str = 'utf-8'
     ) -> DiffResult:
         """
-        Compare two files by path.
-        
+        Compare two files by path.      
         Args:
             left_path: Path to left file
             right_path: Path to right file
             encoding: File encoding
-            
         Returns:
             DiffResult for the files
         """
@@ -319,12 +312,10 @@ class TextDiffEngine:
     ) -> Iterator[str]:
         """
         Generate unified diff output.
-        
         Compatible with standard diff -u format.
         """
         left = list(left_lines)
         right = list(right_lines)
-
         # Normalize for comparison if needed
         if self.options.ignore_line_endings:
             left_cmp = [line.rstrip('\r\n') for line in left]
@@ -429,7 +420,74 @@ class TextDiffEngine:
         left: list[str],
         right: list[str]
     ) -> Sequence[tuple[str, int, int, int, int]]:
-        """Get diff opcodes using the configured algorithm."""
+        """Get diff opcodes using the configured algorithm with common prefix/suffix trimming."""
+        n_left = len(left)
+        n_right = len(right)
+
+        # Quick check for identical lists
+        if left == right:
+            return [('equal', 0, n_left, 0, n_right)] if n_left > 0 else []
+
+        # Find common prefix
+        prefix_len = 0
+        min_len = min(n_left, n_right)
+        while prefix_len < min_len and left[prefix_len] == right[prefix_len]:
+            prefix_len += 1
+
+        # Find common suffix (not overlapping with prefix)
+        suffix_len = 0
+        max_suffix = min_len - prefix_len
+        while suffix_len < max_suffix and left[n_left - 1 - suffix_len] == right[n_right - 1 - suffix_len]:
+            suffix_len += 1
+
+        # Middle slices
+        left_mid_end = n_left - suffix_len
+        right_mid_end = n_right - suffix_len
+
+        left_mid = left[prefix_len:left_mid_end]
+        right_mid = right[prefix_len:right_mid_end]
+
+        mid_opcodes: list[tuple[str, int, int, int, int]] = []
+        if left_mid or right_mid:
+            raw_mid_opcodes = self._compute_raw_opcodes(left_mid, right_mid)
+            for tag, i1, i2, j1, j2 in raw_mid_opcodes:
+                mid_opcodes.append((tag, i1 + prefix_len, i2 + prefix_len, j1 + prefix_len, j2 + prefix_len))
+
+        # Assemble full opcodes
+        result_opcodes: list[tuple[str, int, int, int, int]] = []
+        if prefix_len > 0:
+            result_opcodes.append(('equal', 0, prefix_len, 0, prefix_len))
+
+        result_opcodes.extend(mid_opcodes)
+
+        if suffix_len > 0:
+            result_opcodes.append(('equal', left_mid_end, n_left, right_mid_end, n_right))
+
+        # Merge adjacent 'equal' opcodes if any
+        merged_opcodes: list[tuple[str, int, int, int, int]] = []
+        for op in result_opcodes:
+            if merged_opcodes and merged_opcodes[-1][0] == 'equal' and op[0] == 'equal':
+                prev_tag, prev_i1, _, prev_j1, _ = merged_opcodes[-1]
+                _, _, curr_i2, _, curr_j2 = op
+                merged_opcodes[-1] = ('equal', prev_i1, curr_i2, prev_j1, curr_j2)
+            else:
+                merged_opcodes.append(op)
+
+        return merged_opcodes
+
+    def _compute_raw_opcodes(
+        self,
+        left: list[str],
+        right: list[str]
+    ) -> Sequence[tuple[str, int, int, int, int]]:
+        """Compute diff opcodes on middle slice without prefix/suffix trimming."""
+        if not left and right:
+            return [('insert', 0, 0, 0, len(right))]
+        if left and not right:
+            return [('delete', 0, len(left), 0, 0)]
+        if not left and not right:
+            return []
+
         if self.options.algorithm == DiffAlgorithm.PATIENCE:
             return self._patience_diff(left, right)
         elif self.options.algorithm == DiffAlgorithm.HISTOGRAM:
@@ -452,7 +510,6 @@ class TextDiffEngine:
     ) -> Sequence[tuple[str, int, int, int, int]]:
         """
         Patience diff algorithm.
-        
         Better for code because it anchors on unique lines.
         """
         # Find unique lines in both sequences
@@ -461,7 +518,7 @@ class TextDiffEngine:
 
         for i, line in enumerate(left):
             if line in left_unique:
-                left_unique[line] = None  # Mark as non-unique
+                left_unique[line] = None
             else:
                 left_unique[line] = i
 
@@ -534,7 +591,7 @@ class TextDiffEngine:
                 for j, rline in enumerate(right):
                     if rline == line:
                         anchors.append((i, j, line))
-                        anchor_lines.discard(line)  # Only use first occurrence
+                        anchor_lines.discard(line) 
                         break
 
         anchors.sort()

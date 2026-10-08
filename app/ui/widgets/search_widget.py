@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import List, Optional
 
-from PyQt6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, QThreadPool, pyqtSignal
 from PyQt6.QtGui import (
     QColor,
     QKeyEvent,
@@ -43,7 +43,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.services.search_history import SearchHistory
 from app.ui.widgets.diff_text_edit import DiffColors  # Import DiffColors
+from app.workers.search_worker import CombinedSearchWorker
 
 
 class SearchDirection(Enum):
@@ -148,52 +150,6 @@ class SearchResult:
             return len(self.matches) - 1 if wrap else 0
         return prev_idx
 
-
-class SearchHistory:
-    """Manages search history."""
-
-    MAX_HISTORY = 20
-
-    def __init__(self, settings_key: str = "search_history"):
-        self._history: List[str] = []
-        self._settings_key = settings_key
-        self._load()
-
-    def add(self, term: str) -> None:
-        """Add a term to history."""
-        if not term:
-            return
-
-        # Remove if already exists
-        if term in self._history:
-            self._history.remove(term)
-
-        # Add to front
-        self._history.insert(0, term)
-
-        # Trim to max
-        self._history = self._history[:self.MAX_HISTORY]
-
-        self._save()
-
-    def get_all(self) -> List[str]:
-        """Get all history items."""
-        return self._history.copy()
-
-    def clear(self) -> None:
-        """Clear history."""
-        self._history.clear()
-        self._save()
-
-    def _load(self) -> None:
-        """Load history from settings."""
-        settings = QSettings()
-        self._history = settings.value(self._settings_key, [], type=list)
-
-    def _save(self) -> None:
-        """Save history to settings."""
-        settings = QSettings()
-        settings.setValue(self._settings_key, self._history)
 
 
 class SearchLineEdit(QLineEdit):
@@ -1233,90 +1189,6 @@ class MatchHighlighter(QSyntaxHighlighter):
         return True
 
 
-class SearchWorkerSignals(QObject):
-    """Signals for SearchWorker."""
-    finished = pyqtSignal(object)  # Returns list of (start, end, text) tuples
-    error = pyqtSignal(str)
-
-class SearchWorker(QRunnable):
-    """
-    Worker for running regex searches in background.
-    """
-    def __init__(self, text: str, pattern: str, options: SearchOptions):
-        super().__init__()
-        self.text = text
-        self.pattern = pattern
-        self.options = options
-        self.signals = SearchWorkerSignals()
-
-    def run(self):
-        try:
-            matches = []
-            flags = 0
-            if not self.options.case_sensitive:
-                flags |= re.IGNORECASE
-
-            # Simple timeout mechanism using a loop if possible,
-            # but standard re.finditer blocks.
-            # We rely on the fact that we are in a separate thread so UI doesn't freeze.
-            # A true "timeout" to kill the thread is hard in Python without processes.
-            # However, unblocking the UI is the primary goal of ReDoS protection in desktop apps.
-
-            regex = re.compile(self.pattern, flags)
-
-            # Limit number of matches to prevent OOM on massive match counts
-            MAX_MATCHES = 10000
-            count = 0
-
-            for match in regex.finditer(self.text):
-                matches.append((match.start(), match.end(), match.group()))
-                count += 1
-                if count >= MAX_MATCHES:
-                    break
-
-            self.signals.finished.emit(matches)
-
-        except re.error as e:
-            self.signals.error.emit(str(e))
-        except Exception as e:
-            self.signals.error.emit(str(e))
-
-
-class CombinedSearchWorker(QRunnable):
-    """Worker to search multiple texts."""
-    def __init__(self, text_data: list, pattern: str, options: SearchOptions):
-        super().__init__()
-        self.text_data = text_data # [(name, text), ...]
-        self.pattern = pattern
-        self.options = options
-        self.signals = SearchWorkerSignals()
-
-    def run(self):
-        try:
-            results = [] # [(name, match_tuples, term, options), ...]
-            flags = 0
-            if not self.options.case_sensitive:
-                flags |= re.IGNORECASE
-
-            regex = re.compile(self.pattern, flags)
-            MAX_MATCHES = 10000
-
-            for name, text in self.text_data:
-                matches = []
-                count = 0
-                for match in regex.finditer(text):
-                    matches.append((match.start(), match.end(), match.group()))
-                    count += 1
-                    if count >= MAX_MATCHES:
-                        break
-
-                results.append((name, matches, self.pattern, self.options))
-
-            self.signals.finished.emit(results)
-        except Exception as e:
-            self.signals.error.emit(str(e))
-
-
 class SearchController(QObject): # Inherit QObject for signals
     """
     Controller for managing search across multiple text widgets.
@@ -1371,24 +1243,13 @@ class SearchController(QObject): # Inherit QObject for signals
             self.search_finished.emit(result)
             return
 
-        # For regex, use worker
-        # We need to collect text from all widgets
         widgets_to_search = (
             {widget_name: self._widgets[widget_name]}
             if widget_name and widget_name in self._widgets
             else self._widgets
         )
 
-        # Dispatch a worker for EACH widget? Or one big text?
-        # Simplest is one worker per widget, then combine.
-        # But handling multiple async returns is complex.
-        # Let's do a simplified approach: Search is usually fast.
-        # ReDoS hangs. We just need to NOT hang the UI.
-
-        # We will dispatch sequentially or just handle the first one for now
-        # to keep it simple, OR we run one worker that handles the loop over widgets (using text copies).
-
-        combined_text_data = [] # list of (name, text)
+        combined_text_data = []
         for name, widget in widgets_to_search.items():
             combined_text_data.append((name, widget.toPlainText()))
 

@@ -10,6 +10,7 @@ from typing import Optional
 
 from PyQt6.QtCore import QObject
 
+from app.constants.constants import BINARY_EXTENSIONS, IMAGE_EXTENSIONS, TEXT_EXTENSIONS
 from app.core.diff.binary_diff import BinaryCompareOptions, BinaryDiffEngine
 from app.core.diff.image_diff import ImageCompareOptions, ImageDiffEngine
 from app.core.diff.text_diff import TextCompareOptions, TextDiffEngine
@@ -283,34 +284,10 @@ class FileTypeDetectWorker(BaseWorker):
     Worker to detect file types and choose appropriate comparison.
     """
 
-    # Known text extensions
-    TEXT_EXTENSIONS = {
-        '.txt', '.md', '.rst', '.json', '.xml', '.html', '.htm',
-        '.css', '.js', '.ts', '.py', '.rb', '.java', '.c', '.cpp',
-        '.h', '.hpp', '.cs', '.go', '.rs', '.swift', '.kt', '.scala',
-        '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
-        '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf',
-        '.sql', '.graphql', '.proto',
-        '.vue', '.jsx', '.tsx', '.svelte',
-        '.r', '.R', '.jl', '.m', '.matlab',
-        '.tex', '.bib', '.sty',
-        '.csv', '.tsv',
-        '.log', '.diff', '.patch',
-    }
-
-    # Known image extensions
-    IMAGE_EXTENSIONS = {
-        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif',
-        '.webp', '.ico', '.svg',
-    }
-
-    # Known binary extensions
-    BINARY_EXTENSIONS = {
-        '.exe', '.dll', '.so', '.dylib', '.bin', '.dat',
-        '.zip', '.tar', '.gz', '.bz2', '.xz', '.7z', '.rar',
-        '.mp3', '.mp4', '.avi', '.mkv', '.mov', '.wav', '.flac',
-        '.ttf', '.otf', '.woff', '.woff2',
-    }
+    # Known extensions
+    TEXT_EXTENSIONS = TEXT_EXTENSIONS
+    IMAGE_EXTENSIONS = IMAGE_EXTENSIONS
+    BINARY_EXTENSIONS = BINARY_EXTENSIONS
 
     def __init__(
         self,

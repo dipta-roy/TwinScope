@@ -18,6 +18,7 @@ from PyQt6.QtCore import (
     QModelIndex,
     QObject,
     QSortFilterProxyModel,
+    QTimer,
     Qt,
     pyqtSignal,
 )
@@ -35,6 +36,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.constants.constants import FILE_TREE_COLUMNS
 from app.core.models import FileCompareResult, FileStatus, FolderCompareNode, FolderCompareResult
 
 
@@ -53,6 +55,7 @@ class FileTreeItem:
         self._data = data
         self._parent = parent
         self._children: list['FileTreeItem'] = []
+        self._has_differences: bool = (data.status != FileStatus.IDENTICAL)
 
     @property
     def data(self) -> FileCompareResult:
@@ -69,6 +72,11 @@ class FileTreeItem:
     def add_child(self, child: 'FileTreeItem') -> None:
         child._parent = self
         self._children.append(child)
+        if child._has_differences and not self._has_differences:
+            p: Optional['FileTreeItem'] = self
+            while p and not p._has_differences:
+                p._has_differences = True
+                p = p._parent
 
     def child(self, row: int) -> Optional['FileTreeItem']:
         if 0 <= row < len(self._children):
@@ -100,10 +108,8 @@ class FileTreeItem:
         return self._data.relative_path
 
     def has_differences(self) -> bool:
-        """Check if this item or any children have differences."""
-        if self._data.status != FileStatus.IDENTICAL:
-            return True
-        return any(child.has_differences() for child in self._children)
+        """Check if this item or any children have differences (O(1) lookup)."""
+        return self._has_differences
 
 
 class FileTreeModel(QAbstractItemModel):
@@ -119,7 +125,7 @@ class FileTreeModel(QAbstractItemModel):
     - Right Modified
     """
 
-    COLUMNS = ['Name', 'Status', '% Match', 'Left Size', 'Right Size', 'Left Modified', 'Right Modified']
+    COLUMNS = FILE_TREE_COLUMNS
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -406,8 +412,10 @@ class FileFilterProxyModel(QSortFilterProxyModel):
 
     def set_name_filter(self, pattern: str) -> None:
         """Set name filter pattern."""
-        self._name_filter = pattern.lower()
-        self.invalidateFilter()
+        normalized = pattern.lower().strip()
+        if self._name_filter != normalized:
+            self._name_filter = normalized
+            self.invalidateFilter()
 
     def filterAcceptsRow(
         self,
@@ -435,20 +443,21 @@ class FileFilterProxyModel(QSortFilterProxyModel):
 
         # Name filter
         if self._name_filter:
-            if self._name_filter not in item.name.lower():
-                # Check if any children match
-                if not self._children_match_name(item):
-                    return False
+            if self._name_filter in item.name.lower():
+                return True
+            if self._ancestor_matches_name(item):
+                return True
+            return False
 
         return True
 
-    def _children_match_name(self, item: FileTreeItem) -> bool:
-        """Check if any children match the name filter."""
-        for child in item.children:
-            if self._name_filter in child.name.lower():
+    def _ancestor_matches_name(self, item: FileTreeItem) -> bool:
+        """Check upwards if any parent folder matched the name filter."""
+        curr = item.parent
+        while curr is not None:
+            if curr.name and self._name_filter in curr.name.lower():
                 return True
-            if self._children_match_name(child):
-                return True
+            curr = curr.parent
         return False
 
 
@@ -519,7 +528,13 @@ class FileTreeWidget(QWidget):
 
     def _connect_signals(self) -> None:
         """Connect signals."""
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(200)
+        self._filter_timer.timeout.connect(self._apply_name_filter)
+
         self.filter_edit.textChanged.connect(self._on_filter_changed)
+        self.filter_edit.returnPressed.connect(self._apply_name_filter)
         self.status_combo.currentIndexChanged.connect(self._on_status_filter_changed)
         self.hide_identical_cb.toggled.connect(self._on_hide_identical_changed)
 
@@ -545,8 +560,16 @@ class FileTreeWidget(QWidget):
         self.tree_view.collapseAll()
 
     def _on_filter_changed(self, text: str) -> None:
-        """Handle filter text change."""
-        self.proxy_model.set_name_filter(text)
+        """Debounce filter text change."""
+        if not text.strip():
+            self._apply_name_filter()
+        else:
+            self._filter_timer.start()
+
+    def _apply_name_filter(self) -> None:
+        """Apply name filter to proxy model."""
+        self._filter_timer.stop()
+        self.proxy_model.set_name_filter(self.filter_edit.text())
 
     def _on_status_filter_changed(self, index: int) -> None:
         """Handle status filter change."""

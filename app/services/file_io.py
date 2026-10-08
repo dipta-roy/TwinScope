@@ -14,11 +14,17 @@ import logging
 import os
 import shutil
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Iterator, Optional
 
+from app.constants.constants import (
+    BINARY_SIGNATURES,
+    DEFAULT_BINARY_CHECK_SIZE,
+    DEFAULT_ENCODINGS,
+)
 import chardet
 import docx  # Added for Word processing
 import openpyxl  # Added for Excel processing
@@ -77,27 +83,16 @@ class FileIOService:
     """Service for safe file I/O operations."""
 
     # Common text encodings to try
-    ENCODINGS = ['utf-8', 'utf-8-sig', 'utf-16', 'utf-16-le', 'utf-16-be',
-                 'ascii', 'iso-8859-1', 'cp1252', 'latin-1']
+    ENCODINGS = DEFAULT_ENCODINGS
 
     # Binary file signatures (magic bytes)
-    BINARY_SIGNATURES = [
-        b'\x00',           # Null byte (strong indicator)
-        b'\x89PNG',        # PNG
-        b'\xff\xd8\xff',   # JPEG
-        b'GIF8',           # GIF
-        b'PK\x03\x04',     # ZIP
-        b'\x1f\x8b',       # GZIP
-        b'%PDF',           # PDF
-        b'\x7fELF',        # ELF
-        b'MZ',             # Windows executable
-    ]
+    BINARY_SIGNATURES = BINARY_SIGNATURES
 
     def __init__(
         self,
         default_encoding: str = 'utf-8',
         fallback_encoding: str = 'latin-1',
-        binary_check_size: int = 8192
+        binary_check_size: int = DEFAULT_BINARY_CHECK_SIZE
     ):
         self.default_encoding = default_encoding
         self.fallback_encoding = fallback_encoding
@@ -301,8 +296,14 @@ class FileIOService:
             with open(path, 'r', encoding=encoding, errors='replace') as f:
                 for line in f:
                     yield line
+        except (FileNotFoundError, PermissionError) as e:
+            logging.error(f"FileIOService - File access error reading lines from {path}: {e}")
+            return
+        except (UnicodeDecodeError, OSError) as e:
+            logging.error(f"FileIOService - I/O error reading lines from {path}: {e}")
+            return
         except Exception as e:
-            logging.error(f"FileIOService - Failed to read lines from {path}: {e}")
+            logging.error(f"FileIOService - Unexpected failure reading lines from {path}: {e}", exc_info=True)
             return
 
     def write_file(
@@ -435,8 +436,14 @@ class FileIOService:
             for page in reader.pages:
                 text += page.extract_text() or ""
             return text
+        except (FileNotFoundError, PermissionError) as e:
+            logging.error(f"FileIOService - Access error reading PDF {path}: {e}")
+            return None
+        except (pypdf.errors.PdfReadError, ValueError, KeyError) as e:
+            logging.warning(f"FileIOService - Invalid or corrupted PDF structure in {path}: {e}")
+            return None
         except Exception as e:
-            logging.error(f"Error extracting text from PDF {path}: {e}")
+            logging.error(f"FileIOService - Unexpected error extracting text from PDF {path}: {e}", exc_info=True)
             return None
 
     def _extract_text_from_docx(self, path: Path) -> Optional[str]:
@@ -447,8 +454,14 @@ class FileIOService:
             for paragraph in document.paragraphs:
                 text.append(paragraph.text)
             return "\n".join(text)
+        except (FileNotFoundError, PermissionError) as e:
+            logging.error(f"FileIOService - Access error reading DOCX {path}: {e}")
+            return None
+        except (zipfile.BadZipFile, KeyError, ValueError) as e:
+            logging.warning(f"FileIOService - Invalid or corrupted DOCX archive in {path}: {e}")
+            return None
         except Exception as e:
-            logging.error(f"Error extracting text from DOCX {path}: {e}")
+            logging.error(f"FileIOService - Unexpected error extracting text from DOCX {path}: {e}", exc_info=True)
             return None
 
     def _extract_text_from_xlsx(self, path: Path) -> Optional[str]:
@@ -464,8 +477,14 @@ class FileIOService:
                     full_text.append("\t".join(row_values)) # Use tab as delimiter for columns
                 full_text.append("\n") # Add a blank line after each sheet for readability
             return "\n".join(full_text)
+        except (FileNotFoundError, PermissionError) as e:
+            logging.error(f"FileIOService - Access error reading XLSX {path}: {e}")
+            return None
+        except (zipfile.BadZipFile, KeyError, ValueError) as e:
+            logging.warning(f"FileIOService - Invalid or corrupted XLSX file in {path}: {e}")
+            return None
         except Exception as e:
-            logging.error(f"Error extracting text from XLSX {path}: {e}")
+            logging.error(f"FileIOService - Unexpected error extracting text from XLSX {path}: {e}", exc_info=True)
             return None
 
     def _extract_text_from_pptx(self, path: Path) -> Optional[str]:
@@ -480,8 +499,14 @@ class FileIOService:
                         full_text.append(shape.text)
                 full_text.append("\n") # Add a blank line after each slide for readability
             return "\n".join(full_text)
+        except (FileNotFoundError, PermissionError) as e:
+            logging.error(f"FileIOService - Access error reading PPTX {path}: {e}")
+            return None
+        except (zipfile.BadZipFile, KeyError, ValueError) as e:
+            logging.warning(f"FileIOService - Invalid or corrupted PPTX file in {path}: {e}")
+            return None
         except Exception as e:
-            logging.error(f"Error extracting text from PPTX {path}: {e}")
+            logging.error(f"FileIOService - Unexpected error extracting text from PPTX {path}: {e}", exc_info=True)
             return None
 
     def _is_binary_file(self, path: Path) -> bool:
@@ -508,7 +533,11 @@ class FileIOService:
 
             return False
 
-        except Exception:
+        except (PermissionError, FileNotFoundError, OSError) as e:
+            logging.debug(f"FileIOService - Access error checking binary status for {path}: {e}")
+            return True  # Assume binary on error
+        except Exception as e:
+            logging.warning(f"FileIOService - Unexpected error checking binary status for {path}: {e}")
             return True  # Assume binary on error
 
     def _detect_encoding(self, content: bytes) -> str:
@@ -516,8 +545,17 @@ class FileIOService:
         if not content:
             return self.default_encoding
 
-        # Use chardet for detection
-        result = chardet.detect(content)
+        # Fast-path: check UTF-8 first (covers ASCII and modern text formats efficiently)
+        try:
+            content.decode('utf-8')
+            return 'utf-8'
+        except UnicodeDecodeError:
+            pass
+
+        # Use chardet on a bounded sample (first 64 KB is sufficient for statistical detection
+        # and avoids freezing on multi-megabyte files)
+        sample = content[:65536] if len(content) > 65536 else content
+        result = chardet.detect(sample)
 
         if result['confidence'] > 0.7 and result['encoding']:
             encoding = result['encoding'].lower()
@@ -534,7 +572,11 @@ class FileIOService:
             with open(path, 'rb') as f:
                 header = f.read(4096)
             return self._detect_encoding(header)
-        except Exception:
+        except (PermissionError, FileNotFoundError, OSError) as e:
+            logging.debug(f"FileIOService - Access error during quick encoding detection for {path}: {e}")
+            return self.default_encoding
+        except Exception as e:
+            logging.warning(f"FileIOService - Unexpected error during quick encoding detection for {path}: {e}")
             return self.default_encoding
 
     def _detect_line_ending(self, content: str) -> LineEnding:
@@ -631,15 +673,19 @@ class TempFileManager:
             try:
                 if path.exists():
                     path.unlink()
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                logging.warning(f"TempFileManager - I/O error cleaning up temp file {path}: {e}")
             except Exception as e:
-                logging.warning(f"TempFileManager - Cleanup failed for temp file {path}: {e}")
+                logging.warning(f"TempFileManager - Unexpected error cleaning up temp file {path}: {e}")
 
         for path in self._temp_dirs:
             try:
                 if path.exists():
                     shutil.rmtree(path)
+            except (FileNotFoundError, PermissionError, OSError) as e:
+                logging.warning(f"TempFileManager - I/O error cleaning up temp directory {path}: {e}")
             except Exception as e:
-                logging.warning(f"TempFileManager - Cleanup failed for temp directory {path}: {e}")
+                logging.warning(f"TempFileManager - Unexpected error cleaning up temp directory {path}: {e}")
 
         self._temp_files.clear()
         self._temp_dirs.clear()

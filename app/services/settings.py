@@ -12,6 +12,9 @@ from pathlib import Path
 from typing import Any, Callable, Optional, TypeVar
 
 
+from app.constants import DEFAULT_EXCLUDE_PATTERNS
+
+
 class Theme(Enum):
     """UI theme options."""
     SYSTEM = "system"
@@ -61,10 +64,7 @@ class ComparisonSettings:
 
     # File filters
     include_patterns: list[str] = field(default_factory=list)
-    exclude_patterns: list[str] = field(default_factory=lambda: [
-        '*.pyc', '__pycache__', '.git', '.svn', '.hg',
-        'node_modules', '.DS_Store', 'Thumbs.db'
-    ])
+    exclude_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_PATTERNS))
 
 
 @dataclass

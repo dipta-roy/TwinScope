@@ -1,33 +1,35 @@
 """
-Custom toolbar widgets for the comparison application.
-
-This module now re-exports all components from the modular `app.ui.widgets.toolbar` package.
+Toolbar widgets package for TwinScope.
 """
 
-from __future__ import annotations
-
-from app.ui.widgets.toolbar import (
+from app.ui.widgets.toolbar.path_selector import PathSelectorButton
+from app.ui.widgets.toolbar.navigation import (
+    NavigationButtons,
+    ViewModeSelector,
+    ZoomControl,
+)
+from app.ui.widgets.toolbar.indicators import (
     BadgeButton,
-    CompareButton,
-    CompareOptionsToolbar,
+    ProgressIndicator,
+    StatusIndicator,
+)
+from app.ui.widgets.toolbar.selectors import (
     EncodingSelector,
-    FilterBar,
     FontSizeSpinner,
     LineEndingSelector,
-    NavigationButtons,
-    PathSelectorButton,
-    ProgressIndicator,
-    QuickActionBar,
-    RefreshButton,
     SplitButton,
-    StatusIndicator,
-    SwapButton,
-    ToolbarFactory,
     ToolbarLabel,
     ToolbarSearchBox,
     ToolbarSeparator,
-    ViewModeSelector,
-    ZoomControl,
+)
+from app.ui.widgets.toolbar.action_bars import (
+    CompareButton,
+    CompareOptionsToolbar,
+    FilterBar,
+    QuickActionBar,
+    RefreshButton,
+    SwapButton,
+    ToolbarFactory,
 )
 
 __all__ = [

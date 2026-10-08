@@ -1336,9 +1336,6 @@ class SyntaxHighlighter(QSyntaxHighlighter):
         if text is None or not self._enabled or not self._language:
             return
 
-        # Create user data for the block
-        user_data = BlockUserData()
-
         # Apply single-line rules
         for rule in self._rules:
             pattern = rule.compile()
@@ -1354,14 +1351,11 @@ class SyntaxHighlighter(QSyntaxHighlighter):
                 fmt = self._formats.get(rule.token_type)
                 if fmt:
                     self.setFormat(start, length, fmt)
-                    user_data.tokens.append((start, length, rule.token_type))
 
         # Handle multi-line constructs
-        self._handle_multiline(text, user_data)
+        self._handle_multiline(text)
 
-        self.setCurrentBlockUserData(user_data)
-
-    def _handle_multiline(self, text: str, user_data: BlockUserData) -> None:
+    def _handle_multiline(self, text: str) -> None:
         """Handle multi-line highlighting (comments, strings)."""
         if not self._multiline_rules:
             self.setCurrentBlockState(0)

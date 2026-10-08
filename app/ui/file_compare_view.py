@@ -43,6 +43,9 @@ class SimpleDiffLine:
     right_line_num: Optional[int]
     intraline_diff: Optional[Any] = None
 
+_EMPTY_DIFF_LINE = DiffLine(DiffLineType.EMPTY, "", None, None)
+
+
 class FileCompareView(QWidget):
     """
     View for comparing two text files.
@@ -406,27 +409,15 @@ class FileCompareView(QWidget):
 
             self._displayed_line_to_pair_index_map[display_line_idx] = original_pair_idx
 
-            if pair.left_line:
-                left_lines.append(DiffLine(
-                    line_type=pair.left_line.line_type,
-                    content=pair.left_line.content,
-                    left_line_num=pair.left_line.left_line_num,
-                    right_line_num=pair.left_line.right_line_num,
-                    intraline_diff=pair.left_line.intraline_diff
-                ))
+            if pair.left_line is not None:
+                left_lines.append(pair.left_line)
             else:
-                left_lines.append(DiffLine(DiffLineType.EMPTY, "", None, None))
+                left_lines.append(_EMPTY_DIFF_LINE)
 
-            if pair.right_line:
-                right_lines.append(DiffLine(
-                    line_type=pair.right_line.line_type,
-                    content=pair.right_line.content,
-                    left_line_num=pair.right_line.left_line_num,
-                    right_line_num=pair.right_line.right_line_num,
-                    intraline_diff=pair.right_line.intraline_diff
-                ))
+            if pair.right_line is not None:
+                right_lines.append(pair.right_line)
             else:
-                right_lines.append(DiffLine(DiffLineType.EMPTY, "", None, None))
+                right_lines.append(_EMPTY_DIFF_LINE)
 
             display_line_idx += 1
 

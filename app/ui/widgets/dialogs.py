@@ -29,6 +29,12 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.constants.constants import (
+    APP_ABOUT_DESCRIPTION,
+    APP_AUTHOR,
+    APP_NAME,
+    APP_VERSION,
+)
 from app.core.folder.sync import FolderSync
 from app.core.models import FolderCompareResult, SyncAction, SyncDirection
 from app.services.hashing import (  # Import HashingService, HashAlgorithm, HashResult
@@ -180,7 +186,7 @@ class SettingsDialog(QDialog):
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("About TwinScope")
+        self.setWindowTitle(f"About {APP_NAME}")
         self.setMinimumSize(500, 350)
 
         layout = QVBoxLayout(self)
@@ -196,16 +202,15 @@ class AboutDialog(QDialog):
         layout.addWidget(logo_label)
 
         # About content
-        about_content = """
-**TwinScope** is a cross-platform file and folder comparison tool inspired by Beyond Compare. Built with Python, it provides a clean, responsive interface for comparing text files, binary files, images, and entire directory trees.
+        about_content = f"""
+{APP_ABOUT_DESCRIPTION}
 
-**Application Version**:1.2
+**Application Version**: {APP_VERSION}
 
-**Author**: Dipta Roy
-        """
-
+**Author**: {APP_AUTHOR}
+"""
         text_browser = QTextBrowser()
-        text_browser.setMarkdown(about_content)
+        text_browser.setMarkdown(about_content.strip())
         text_browser.setOpenExternalLinks(True)
         layout.addWidget(text_browser)
 

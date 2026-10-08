@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from PyQt6.QtCore import QByteArray, QSize, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QByteArray, QSize, Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
-    QSplitter,  # QTabWidget added
+    QSplitter,
     QStatusBar,
     QTabWidget,
     QToolBar,
@@ -33,6 +33,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from app.constants.constants import APP_NAME, APP_VERSION, DOC_EXTENSIONS, IMAGE_EXTENSIONS
+from app.ui.widgets.update_dialog import UpdateDialog
+from app.updater.updater import Updater
 from app.core.diff.binary_diff import BinaryCompareOptions
 from app.core.diff.image_diff import ImageCompareOptions
 from app.core.diff.text_diff import TextCompareOptions, WhitespaceMode
@@ -49,7 +52,7 @@ from app.ui.widgets.dialogs import (
     HelpDialog,
     OpenFilesDialog,
     OpenFoldersDialog,
-    SettingsDialog,  # Added missing dialogs
+    SettingsDialog,
     ThreeWayMergeDialog,
 )
 from app.ui.widgets.file_preview import FilePreviewPanel
@@ -61,7 +64,6 @@ from app.workers.compare_worker import (
     ImageCompareWorker,
     TextCompareWorker,
 )
-
 
 class MainWindow(QMainWindow):
     """
@@ -95,8 +97,8 @@ class MainWindow(QMainWindow):
         self._stats_left_only: Optional[QLabel] = None
         self._stats_right_only: Optional[QLabel] = None
         self._progress_bar: Optional[QProgressBar] = None
-        self._sidebar_widget: Optional[QWidget] = None # Added for sidebar
-        self._splitter: Optional[QSplitter] = None # Added for splitter
+        self._sidebar_widget: Optional[QWidget] = None
+        self._splitter: Optional[QSplitter] = None
 
         # Register for settings changes
         self._settings_manager.add_observer(self._on_settings_changed)
@@ -105,7 +107,7 @@ class MainWindow(QMainWindow):
         self._setup_menus()
         self._setup_toolbar()
         self._setup_statusbar()
-        self._setup_connections() # Note: _setup_connections will need adjustment
+        self._setup_connections()
         self._load_settings()
 
         # Accept drops
@@ -116,6 +118,9 @@ class MainWindow(QMainWindow):
         # Update menu action checked state
         if hasattr(self, '_action_toggle_main_toolbar'):
             self._action_toggle_main_toolbar.setChecked(False)
+
+        # Check for updates on startup
+        QTimer.singleShot(2000, self._check_updates_on_startup)
 
     def _setup_ui(self) -> None:
         """Set up the main UI layout."""
@@ -154,8 +159,6 @@ class MainWindow(QMainWindow):
         # Start with welcome page selected
         self._stack.setCurrentWidget(self._welcome_page)
 
-
-
     def _create_sidebar_widget(self) -> QWidget:
         """Create the sidebar widget with recent comparisons."""
         sidebar = QWidget()
@@ -175,7 +178,7 @@ class MainWindow(QMainWindow):
         self._recent_layout.setContentsMargins(0, 10, 0, 0)
         sidebar_layout.addWidget(self._recent_list)
 
-        sidebar_layout.addStretch() # Push content to the top
+        sidebar_layout.addStretch()
 
         return sidebar
 
@@ -194,36 +197,29 @@ class MainWindow(QMainWindow):
 
         # File menu
         file_menu = menubar.addMenu("&File")
-
         self._action_compare_files = QAction("Compare &Files...", self)
         self._action_compare_files.setShortcut(QKeySequence("Ctrl+O"))
         self._action_compare_files.triggered.connect(self._on_compare_files)
         file_menu.addAction(self._action_compare_files)
-
         self._action_compare_folders = QAction("Compare F&olders...", self)
         self._action_compare_folders.setShortcut(QKeySequence("Ctrl+Shift+O"))
         self._action_compare_folders.triggered.connect(self._on_compare_folders)
         file_menu.addAction(self._action_compare_folders)
-
         self._action_three_way = QAction("&Three-Way Merge...", self)
         self._action_three_way.setShortcut(QKeySequence("Ctrl+M"))
         self._action_three_way.triggered.connect(self._on_three_way_merge)
         file_menu.addAction(self._action_three_way)
-
         file_menu.addSeparator()
-
         self._action_save = QAction("&Save", self)
         self._action_save.setShortcut(QKeySequence.StandardKey.Save)
         self._action_save.triggered.connect(self._on_save)
         self._action_save.setEnabled(False)
         file_menu.addAction(self._action_save)
-
         self._action_save_as = QAction("Save &As...", self)
         self._action_save_as.setShortcut(QKeySequence.StandardKey.SaveAs)
         self._action_save_as.triggered.connect(self._on_save_as)
         self._action_save_as.setEnabled(False)
         file_menu.addAction(self._action_save_as)
-
         file_menu.addSeparator()
 
         # Recent files submenu
@@ -396,6 +392,12 @@ class MainWindow(QMainWindow):
         self._action_help.setShortcut(QKeySequence.StandardKey.HelpContents)
         self._action_help.triggered.connect(self._on_help)
         help_menu.addAction(self._action_help)
+
+        self._action_check_updates = QAction("Check for &Updates...", self)
+        self._action_check_updates.triggered.connect(self._on_check_for_updates)
+        help_menu.addAction(self._action_check_updates)
+
+        help_menu.addSeparator()
 
         self._action_about = QAction("&About", self)
         self._action_about.triggered.connect(self._on_about)
@@ -590,7 +592,7 @@ class MainWindow(QMainWindow):
         self,
         left_path: str,
         right_path: str,
-        encoding: str = 'utf-8' # This encoding parameter is not currently used by the worker
+        encoding: str = 'utf-8'
     ) -> None:
         """
         Initiates a file comparison.
@@ -601,8 +603,8 @@ class MainWindow(QMainWindow):
         new_view = FileCompareView(self)
         self._setup_file_compare_view(new_view, Path(left_path), Path(right_path))
 
-        # Start the file comparison worker, passing the newly created view
-        self._start_file_comparison_worker(left_path, right_path, target_view=new_view)
+        # Start the file comparison worker, passing the newly created view and encoding
+        self._start_file_comparison_worker(left_path, right_path, target_view=new_view, encoding=encoding)
 
         self._add_to_recent(left_path, right_path)
         self._update_recent_menu()
@@ -673,7 +675,13 @@ class MainWindow(QMainWindow):
             logging.error(f"MainWindow._start_folder_comparison_worker: current widget is not FolderCompareView but {type(current_view)}")
 
 
-    def _start_file_comparison_worker(self, left_path: str, right_path: str, target_view: Optional[FileCompareView] = None) -> None:
+    def _start_file_comparison_worker(
+        self,
+        left_path: str,
+        right_path: str,
+        target_view: Optional[FileCompareView] = None,
+        encoding: str = 'utf-8'
+    ) -> None:
         """
         Starts a file comparison worker (Text or Binary).
         """
@@ -692,15 +700,6 @@ class MainWindow(QMainWindow):
             new_view = target_view
 
         file_io_service = FileIOService()
-
-        # known image extensions from compare_worker.py
-        IMAGE_EXTENSIONS = {
-            '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif',
-            '.webp', '.ico', '.svg',
-        }
-
-        # Document extensions that support text extraction
-        DOC_EXTENSIONS = {'.pdf', '.docx', '.xlsx', '.pptx'}
 
         is_image = (left_p and left_p.suffix.lower() in IMAGE_EXTENSIONS) or (right_p and right_p.suffix.lower() in IMAGE_EXTENSIONS)
         is_doc = (left_p and left_p.suffix.lower() in DOC_EXTENSIONS) or (right_p and right_p.suffix.lower() in DOC_EXTENSIONS)
@@ -722,7 +721,7 @@ class MainWindow(QMainWindow):
                     else WhitespaceMode.EXACT
                 ),
             )
-            worker = TextCompareWorker(left_p or "", right_p or "", compare_options)
+            worker = TextCompareWorker(left_p or "", right_p or "", compare_options, encoding=encoding)
         elif (left_p and file_io_service._is_binary_file(left_p)) or (right_p and file_io_service._is_binary_file(right_p)):
             worker = BinaryCompareWorker(left_p or "", right_p or "", BinaryCompareOptions())
         else:
@@ -737,7 +736,7 @@ class MainWindow(QMainWindow):
                     else WhitespaceMode.EXACT
                 ),
             )
-            worker = TextCompareWorker(left_p or "", right_p or "", compare_options)
+            worker = TextCompareWorker(left_p or "", right_p or "", compare_options, encoding=encoding)
 
         thread = WorkerThread(worker)
         worker.signals.finished.connect(
@@ -768,11 +767,6 @@ class MainWindow(QMainWindow):
         tab_title = f"{left_name} ↔ {right_name}"
         index = self._stack.addTab(view, tab_title)
         self._stack.setCurrentIndex(index)
-
-
-
-
-
 
     def three_way_merge(
         self,
@@ -1025,6 +1019,36 @@ class MainWindow(QMainWindow):
         """Show about dialog."""
         dialog = AboutDialog(self)
         dialog.exec()
+
+    @pyqtSlot()
+    def _on_check_for_updates(self) -> None:
+        """Open update dialog to check for latest version."""
+        dialog = UpdateDialog(self)
+        dialog.exec()
+
+    def _check_updates_on_startup(self) -> None:
+        """Silently check for updates on application startup."""
+        self._startup_updater = Updater(parent=self)
+        self._startup_updater.status_changed.connect(self._on_startup_update_status)
+        self._startup_updater.check_for_updates()
+
+    @pyqtSlot(str, object)
+    def _on_startup_update_status(self, status_code: str, data: Any) -> None:
+        """Handle background update check result from application startup."""
+        if status_code == "UPDATE_AVAILABLE" and isinstance(data, dict):
+            latest_version = data.get("version", "New")
+            reply = QMessageBox.information(
+                self,
+                f"{APP_NAME} Update Available",
+                f"A new version of {APP_NAME} is available (<b>v{latest_version}</b>).<br><br>"
+                f"You are currently using <b>v{APP_VERSION}</b>.<br><br>"
+                f"Would you like to review and install the update?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                dialog = UpdateDialog(self, initial_update_info=data)
+                dialog.exec()
 
     @pyqtSlot()
     def _on_close_current_file(self) -> None:

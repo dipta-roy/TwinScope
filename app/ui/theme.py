@@ -3,16 +3,12 @@ UI theme setup and styling for TwinScope.
 """
 
 from __future__ import annotations
-
 import logging
 from typing import Optional
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication, QStyleFactory
-
 from app.services.settings import SettingsManager, Theme
-
 
 def setup_theme(app: Optional[QApplication] = None, theme: Optional[Theme] = None) -> None:
     """

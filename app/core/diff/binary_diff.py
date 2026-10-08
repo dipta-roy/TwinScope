@@ -9,12 +9,11 @@ Provides byte-level comparison with:
 """
 
 from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterator, Optional
-
+from app.constants.constants import BINARY_PATCH_MAGIC
 from app.core.models import (
     BinaryDiffChunk,
     BinaryDiffResult,
@@ -22,16 +21,14 @@ from app.core.models import (
     ByteDifference,
 )
 
-
 @dataclass
 class BinaryCompareOptions:
     """Options for binary comparison."""
-    chunk_size: int = 4096
+    chunk_size: int = 65536  # 64 KB chunk size for efficient I/O
     max_differences: int = 1000  # Stop after this many differences
     context_bytes: int = 16  # Bytes of context around differences
     align_to: int = 16  # Align output to this boundary
     ignore_trailing_nulls: bool = False
-
 
 @dataclass
 class BinaryRegion:
@@ -42,11 +39,9 @@ class BinaryRegion:
     diff_type: BinaryDiffType
     differences: list[int] = field(default_factory=list)  # Offsets of differing bytes
 
-
 class BinaryDiffEngine:
     """
     Engine for comparing binary files.
-    
     Provides detailed byte-level comparison with hex output.
     """
 
@@ -61,12 +56,10 @@ class BinaryDiffEngine:
     ) -> BinaryDiffResult:
         """
         Compare two binary files.
-        
         Args:
             left_path: Path to left file
             right_path: Path to right file
             progress_callback: Called with (bytes_processed, total_bytes)
-            
         Returns:
             BinaryDiffResult with comparison details
         """
@@ -100,8 +93,6 @@ class BinaryDiffEngine:
 
                     if not left_chunk and not right_chunk:
                         if offset == 0 and (left_exists or right_exists):
-                            # Special case: at least one file exists but is empty
-                            # Or we just finished reading
                             pass
 
                         if offset >= total_size:
@@ -160,7 +151,6 @@ class BinaryDiffEngine:
     ) -> tuple[bool, Optional[int]]:
         """
         Quick comparison returning (is_identical, first_diff_offset).
-        
         More efficient than full compare when you only need to know
         if files are identical.
         """
@@ -252,7 +242,6 @@ class BinaryDiffEngine:
     ) -> Iterator[str]:
         """
         Generate hex dump of binary data.
-        
         Yields lines in the format:
         OFFSET: XX XX XX XX ... | ASCII...
         """
@@ -292,7 +281,6 @@ class BinaryDiffEngine:
     ) -> Iterator[tuple[str, str, list[int]]]:
         """
         Generate side-by-side hex dump comparison.
-        
         Yields tuples of (left_line, right_line, diff_positions)
         """
         left_data = chunk.left_bytes
@@ -496,11 +484,10 @@ class BinaryDiffEngine:
 class BinaryPatch:
     """
     Create and apply binary patches.
-    
     Uses a simple format storing offset, length, and replacement bytes.
     """
 
-    MAGIC = b'BPATCH01'
+    MAGIC = BINARY_PATCH_MAGIC
 
     @dataclass
     class PatchEntry:

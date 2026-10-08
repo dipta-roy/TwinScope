@@ -8,6 +8,12 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from app.constants.constants import (
+    CONFLICT_MARKER_BASE_PATTERN,
+    CONFLICT_MARKER_END_PATTERN,
+    CONFLICT_MARKER_SEP_PATTERN,
+    CONFLICT_MARKER_START_PATTERN,
+)
 from app.core.models import (
     ConflictResolution,
     MergeConflict,
@@ -124,10 +130,10 @@ class ConflictMarkerParser:
     """Parse conflict markers in files."""
 
     # Standard Git conflict markers
-    MARKER_START = re.compile(r'^<{7}\s*(.*)$')
-    MARKER_BASE = re.compile(r'^\|{7}\s*(.*)$')
-    MARKER_SEP = re.compile(r'^={7}\s*$')
-    MARKER_END = re.compile(r'^>{7}\s*(.*)$')
+    MARKER_START = CONFLICT_MARKER_START_PATTERN
+    MARKER_BASE = CONFLICT_MARKER_BASE_PATTERN
+    MARKER_SEP = CONFLICT_MARKER_SEP_PATTERN
+    MARKER_END = CONFLICT_MARKER_END_PATTERN
 
     @classmethod
     def has_conflict_markers(cls, content: str) -> bool:

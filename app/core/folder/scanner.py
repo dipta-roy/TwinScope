@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
+from app.constants import DEFAULT_EXCLUDE_PATTERNS
 from app.core.models import (
     FileMetadata,
     FileType,
@@ -37,14 +38,7 @@ class ScanOptions:
 
     # File filters
     include_patterns: list[str] = field(default_factory=list)
-    exclude_patterns: list[str] = field(default_factory=lambda: [
-        '.git', '.svn', '.hg', '.bzr',
-        '__pycache__', '*.pyc', '*.pyo',
-        'node_modules', '.npm',
-        '.DS_Store', 'Thumbs.db', 'desktop.ini',
-        '*.swp', '*.swo', '*~',
-        '.idea', '.vscode', '*.suo', '*.user',
-    ])
+    exclude_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDE_PATTERNS))
 
     # Size limits
     skip_empty_dirs: bool = False
@@ -372,25 +366,21 @@ class FolderScanner:
             else:
                 raise error
 
-        for dirpath, dirnames, filenames in os.walk(
-            root_path,
-            topdown=True,
-            followlinks=self.options.follow_symlinks,
-            onerror=on_walk_error
-        ):
+        # Stack-based traversal using os.scandir for cached metadata and lower overhead
+        dir_stack: list[tuple[Path, int]] = [(root_path, 0)]
+
+        while dir_stack:
             if self._cancelled:
-                logging.info("FolderScanner - Scan cancelled during os.walk")
+                logging.info("FolderScanner - Scan cancelled during traversal")
                 break
 
-            current_path = Path(dirpath)
+            current_path, current_depth = dir_stack.pop()
 
             # Symlink Cycle Detection
             if self.options.follow_symlinks:
                 try:
                     real_path = current_path.resolve()
                     if real_path in visited_paths:
-                        # Cycle detected or already visited via another path
-                        dirnames.clear() # Stop recursing
                         logging.warning(f"FolderScanner - Cycle or duplicate scan detected at {current_path} -> {real_path}")
                         continue
                     visited_paths.add(real_path)
@@ -398,34 +388,56 @@ class FolderScanner:
                     logging.warning(f"FolderScanner - Failed to resolve path {current_path}: {e}")
 
             rel_dir = current_path.relative_to(root_path)
-            current_depth = len(rel_dir.parts)
 
-            # Check max depth
-            if self.options.max_depth is not None:
-                if current_depth > self.options.max_depth:
-                    dirnames.clear()  # Don't recurse deeper
+            if self.options.max_depth is not None and current_depth > self.options.max_depth:
+                continue
+
+            try:
+                with os.scandir(current_path) as it:
+                    raw_entries = list(it)
+            except OSError as error:
+                on_walk_error(error)
+                continue
+
+            subdirs: list[tuple[Path, str, os.DirEntry]] = []
+            subfiles: list[tuple[Path, str, os.DirEntry]] = []
+
+            for entry in raw_entries:
+                entry_name = entry.name
+                try:
+                    is_dir_entry = entry.is_dir(follow_symlinks=self.options.follow_symlinks)
+                except OSError:
                     continue
 
-            # Filter directories in-place to control recursion
-            if not self.options.recursive and current_depth > 0:
-                dirnames.clear()
-            else:
-                dirnames[:] = [
-                    d for d in dirnames
-                    if not should_exclude(str((current_path / d).relative_to(root_path)), True)
-                ]
+                entry_full_path = current_path / entry_name
+                rel_path = str(entry_full_path.relative_to(root_path))
+
+                if is_dir_entry:
+                    if not should_exclude(rel_path, True):
+                        subdirs.append((entry_full_path, rel_path, entry))
+                else:
+                    if not should_exclude(rel_path, False):
+                        if not self.options.include_hidden and entry_name.startswith('.'):
+                            continue
+                        if not self.options.should_include(entry_full_path, False):
+                            continue
+                        subfiles.append((entry_full_path, rel_path, entry))
 
             # Sort for consistent ordering
-            dirnames.sort()
-            filenames.sort()
+            subdirs.sort(key=lambda x: x[1])
+            subfiles.sort(key=lambda x: x[1])
 
             # Process directories
-            for dirname in dirnames:
-                dir_full_path = current_path / dirname
-                rel_path = str(dir_full_path.relative_to(root_path))
-
+            for dir_full_path, rel_path, entry in subdirs:
                 try:
-                    metadata = self._get_metadata(dir_full_path)
+                    stat_res = entry.stat(follow_symlinks=False)
+                    metadata = self._get_metadata(
+                        dir_full_path,
+                        stat_result=stat_res,
+                        is_symlink=entry.is_symlink(),
+                        is_dir=True,
+                        is_file=False,
+                    )
                     directories[rel_path] = metadata
                 except Exception as e:
                     if self.options.ignore_permission_errors:
@@ -435,37 +447,31 @@ class FolderScanner:
                         logging.exception(f"FolderScanner - Unhandled error processing directory {rel_path}")
                         raise
 
+            # Push subdirectories onto stack (reversed so popped in sorted order)
+            if self.options.recursive or current_depth == 0:
+                for dir_full_path, _, _ in reversed(subdirs):
+                    dir_stack.append((dir_full_path, current_depth + 1))
+
             # Process files
-            for filename in filenames:
-                file_full_path = current_path / filename
-                rel_path = str(file_full_path.relative_to(root_path))
-
-                # Check exclusion
-                if should_exclude(rel_path, False):
-                    continue
-
-                # Check hidden
-                if not self.options.include_hidden and filename.startswith('.'):
-                    continue
-
-                # Check include patterns
-                if not self.options.should_include(file_full_path, False):
-                    continue
-
+            for file_full_path, rel_path, entry in subfiles:
                 try:
-                    metadata = self._get_metadata(file_full_path)
+                    stat_res = entry.stat(follow_symlinks=False)
+                    metadata = self._get_metadata(
+                        file_full_path,
+                        stat_result=stat_res,
+                        is_symlink=entry.is_symlink(),
+                        is_dir=False,
+                        is_file=True,
+                    )
 
                     # Check size limits
-                    if self.options.min_file_size is not None:
-                        if metadata.size < self.options.min_file_size:
-                            continue
-                    if self.options.max_file_size is not None:
-                        if metadata.size > self.options.max_file_size:
-                            continue
+                    if self.options.min_file_size is not None and metadata.size < self.options.min_file_size:
+                        continue
+                    if self.options.max_file_size is not None and metadata.size > self.options.max_file_size:
+                        continue
 
                     files[rel_path] = metadata
                     total_size += metadata.size
-
                 except Exception as e:
                     if self.options.ignore_permission_errors:
                         errors.append((rel_path, str(e)))
@@ -512,54 +518,77 @@ class FolderScanner:
 
         matcher = PatternMatcher(self.options.exclude_patterns) if self.options.exclude_patterns else None
 
-        for dirpath, dirnames, filenames in os.walk(
-            root_path,
-            topdown=True,
-            followlinks=self.options.follow_symlinks
-        ):
-            if self._cancelled:
-                return
+        dir_stack: list[Path] = [root_path]
 
-            current_path = Path(dirpath)
+        while dir_stack and not self._cancelled:
+            current_path = dir_stack.pop()
 
-            # Filter directories
-            if not self.options.recursive:
-                if current_path != root_path:
-                    dirnames.clear()
-            else:
-                dirnames[:] = [
-                    d for d in dirnames
-                    if not self._should_include_dir(
-                        current_path / d, root_path,
+            try:
+                with os.scandir(current_path) as it:
+                    raw_entries = list(it)
+            except OSError as e:
+                logging.warning(f"FolderScanner - Lazy scan error reading directory {current_path}: {e}")
+                continue
+
+            subdirs: list[tuple[Path, str, os.DirEntry]] = []
+            subfiles: list[tuple[Path, str, os.DirEntry]] = []
+
+            for entry in raw_entries:
+                entry_name = entry.name
+                try:
+                    is_dir_entry = entry.is_dir(follow_symlinks=self.options.follow_symlinks)
+                except OSError:
+                    continue
+
+                entry_full_path = current_path / entry_name
+                rel_path = str(entry_full_path.relative_to(root_path))
+
+                if is_dir_entry:
+                    if self._should_include_dir(
+                        entry_full_path, root_path,
                         lambda p, is_dir: matcher.matches(p, is_dir) if matcher else False
-                    )
-                ]
+                    ):
+                        subdirs.append((entry_full_path, rel_path, entry))
+                else:
+                    if matcher and matcher.matches(rel_path, False):
+                        continue
+                    if not self.options.include_hidden and entry_name.startswith('.'):
+                        continue
+                    subfiles.append((entry_full_path, rel_path, entry))
 
-            dirnames.sort()
-            filenames.sort()
+            subdirs.sort(key=lambda x: x[1])
+            subfiles.sort(key=lambda x: x[1])
 
             # Yield directories
-            for dirname in dirnames:
-                dir_path = current_path / dirname
-                rel_path = str(dir_path.relative_to(root_path))
+            for dir_full_path, rel_path, entry in subdirs:
                 try:
-                    yield (rel_path, self._get_metadata(dir_path))
+                    stat_res = entry.stat(follow_symlinks=False)
+                    yield (rel_path, self._get_metadata(
+                        dir_full_path,
+                        stat_result=stat_res,
+                        is_symlink=entry.is_symlink(),
+                        is_dir=True,
+                        is_file=False,
+                    ))
                 except Exception as e:
                     logging.warning(f"FolderScanner - Lazy scan error processing directory {rel_path}: {e}")
 
+            # Push subdirectories onto stack
+            if self.options.recursive or current_path == root_path:
+                for dir_full_path, _, _ in reversed(subdirs):
+                    dir_stack.append(dir_full_path)
+
             # Yield files
-            for filename in filenames:
-                file_path = current_path / filename
-                rel_path = str(file_path.relative_to(root_path))
-
-                if matcher and matcher.matches(rel_path, False):
-                    continue
-
-                if not self.options.include_hidden and filename.startswith('.'):
-                    continue
-
+            for file_full_path, rel_path, entry in subfiles:
                 try:
-                    yield (rel_path, self._get_metadata(file_path))
+                    stat_res = entry.stat(follow_symlinks=False)
+                    yield (rel_path, self._get_metadata(
+                        file_full_path,
+                        stat_result=stat_res,
+                        is_symlink=entry.is_symlink(),
+                        is_dir=False,
+                        is_file=True,
+                    ))
                 except Exception as e:
                     logging.warning(f"FolderScanner - Lazy scan error processing file {rel_path}: {e}")
 
@@ -591,24 +620,35 @@ class FolderScanner:
 
         return True
 
-    def _get_metadata(self, path: Path) -> FileMetadata:
-        """Get metadata for a file or directory."""
+    def _get_metadata(
+        self,
+        path: Path,
+        stat_result: Optional[os.stat_result] = None,
+        is_symlink: Optional[bool] = None,
+        is_dir: Optional[bool] = None,
+        is_file: Optional[bool] = None,
+    ) -> FileMetadata:
+        """Get metadata for a file or directory with cached stat support."""
         try:
-            # Use lstat to not follow symlinks initially
-            stat_result = path.lstat()
+            # Use provided stat_result to avoid redundant filesystem calls
+            if stat_result is None:
+                stat_result = path.lstat()
 
             # Determine file type
-            if stat.S_ISLNK(stat_result.st_mode):
+            if is_symlink is None:
+                is_symlink = stat.S_ISLNK(stat_result.st_mode)
+
+            if is_symlink:
                 file_type = FileType.SYMLINK
                 try:
                     symlink_target = path.resolve()
                 except OSError as e:
                     logging.debug(f"FolderScanner - Failed to resolve symlink {path}: {e}")
                     symlink_target = None
-            elif stat.S_ISDIR(stat_result.st_mode):
+            elif (is_dir if is_dir is not None else stat.S_ISDIR(stat_result.st_mode)):
                 file_type = FileType.DIRECTORY
                 symlink_target = None
-            elif stat.S_ISREG(stat_result.st_mode):
+            elif (is_file if is_file is not None else stat.S_ISREG(stat_result.st_mode)):
                 file_type = FileType.FILE
                 symlink_target = None
             else:
@@ -627,16 +667,21 @@ class FolderScanner:
             is_hidden = path.name.startswith('.')
             is_readonly = not os.access(path, os.W_OK)
 
-            # On Windows, check hidden attribute
+            # On Windows, check hidden and readonly attributes via stat_result if available
             if os.name == 'nt':
-                try:
-                    import ctypes
-                    attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
-                    if attrs != -1:
-                        is_hidden = bool(attrs & 0x2)  # FILE_ATTRIBUTE_HIDDEN
-                        is_readonly = bool(attrs & 0x1)  # FILE_ATTRIBUTE_READONLY
-                except Exception as e:
-                    logging.debug(f"FolderScanner - Failed to get Windows file attributes for {path}: {e}")
+                if hasattr(stat_result, 'st_file_attributes'):
+                    attrs = stat_result.st_file_attributes
+                    is_hidden = bool(attrs & 0x2)  # FILE_ATTRIBUTE_HIDDEN
+                    is_readonly = bool(attrs & 0x1)  # FILE_ATTRIBUTE_READONLY
+                else:
+                    try:
+                        import ctypes
+                        attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+                        if attrs != -1:
+                            is_hidden = bool(attrs & 0x2)  # FILE_ATTRIBUTE_HIDDEN
+                            is_readonly = bool(attrs & 0x1)  # FILE_ATTRIBUTE_READONLY
+                    except Exception as e:
+                        logging.debug(f"FolderScanner - Failed to get Windows file attributes for {path}: {e}")
 
             return FileMetadata(
                 path=path,

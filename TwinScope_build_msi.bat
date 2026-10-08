@@ -5,9 +5,49 @@ echo ===============================================
 echo   TwinScope - Build MSI Installer (cx_Freeze)
 echo ===============================================
 
+set "NO_PAUSE=0"
+set "STAGE="
+
+:parse_args
+if "%~1"=="" goto done_args
+if /i "%~1"=="--no-pause" (set "NO_PAUSE=1" & shift & goto parse_args)
+if /i "%~1"=="-y" (set "NO_PAUSE=1" & shift & goto parse_args)
+if /i "%~1"=="--build-only" (set "STAGE=build" & set "NO_PAUSE=1" & shift & goto parse_args)
+if /i "%~1"=="--package-only" (set "STAGE=package" & set "NO_PAUSE=1" & shift & goto parse_args)
+shift
+goto parse_args
+
+:done_args
+
 :: 1. Setup Environment
-echo [STEP 1/2] Setting up environment...
-if exist "venv\Scripts\activate.bat" call venv\Scripts\activate.bat
+echo [STEP 1/3] Setting up environment...
+if exist "venv\Scripts\activate.bat" (
+    call venv\Scripts\activate.bat
+) else if exist ".venv\Scripts\activate.bat" (
+    call .venv\Scripts\activate.bat
+) else (
+    echo [INFO] Virtual environment not found. Creating 'venv'...
+    python -m venv venv
+    if errorlevel 1 (
+        echo [ERROR] Failed to create virtual environment.
+        if "!NO_PAUSE!"=="0" pause
+        exit /b 1
+    )
+    call venv\Scripts\activate.bat
+    if exist "requirements.txt" (
+        echo [INFO] Installing dependencies from requirements.txt...
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if errorlevel 1 (
+            echo [ERROR] Failed to install dependencies.
+            if "!NO_PAUSE!"=="0" pause
+            exit /b 1
+        )
+    )
+)
+
+
+if "%STAGE%"=="package" goto step_package
 
 :: 2. Build Core Executables
 echo.
@@ -18,8 +58,13 @@ python installer\setup_msi.py build
 
 if errorlevel 1 (
     echo [ERROR] Build failed.
-    pause
+    if "!NO_PAUSE!"=="0" pause
     exit /b 1
+)
+
+if "%STAGE%"=="build" (
+    echo [SUCCESS] Core executables built successfully.
+    exit /b 0
 )
 
 echo.
@@ -35,8 +80,9 @@ echo.
 echo   When you are finished signing the files in the build folder,
 echo   press any key to continue to packaging.
 echo ===============================================================================
-pause
+if "!NO_PAUSE!"=="0" pause
 
+:step_package
 :: 3. Package MSI
 echo.
 echo [STEP 3/3] Packaging MSI Installer...
@@ -46,7 +92,7 @@ python installer\setup_msi.py bdist_msi
 
 if errorlevel 1 (
     echo [ERROR] MSI packaging failed.
-    pause
+    if "!NO_PAUSE!"=="0" pause
     exit /b 1
 )
 
@@ -55,19 +101,17 @@ echo.
 echo Moving installer to dist/...
 if not exist "dist" mkdir "dist"
 
-:: Find the generated MSI file in the dist subfolder created by cx_Freeze (usually dist/)
-:: cx_Freeze outputs to "dist" relative to where setup.py is run.
-:: Since we ran it from root, it should be in "dist" already.
-:: However, checking specifically for the .msi file.
-
 for %%f in (dist\*.msi) do (
     echo Found: %%f
-    echo Installer built successfully!
+    echo Installer built successfully.
 )
 
 echo.
 echo ===============================================
-echo   Installer Build Complete!
+echo   Installer Build Complete.
 echo ===============================================
 echo.
-pause
+if "!NO_PAUSE!"=="0" pause
+
+exit /b 0
+

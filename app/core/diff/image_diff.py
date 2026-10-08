@@ -11,10 +11,15 @@ Provides visual comparison of images with:
 from __future__ import annotations
 
 import io
+import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
+
+from app.core.models import ImageDiffRegion, ImageDiffResult, ImageInfo
+
+logger = logging.getLogger(__name__)
 
 # Image processing - PIL/Pillow
 try:
@@ -22,9 +27,6 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-
-from app.core.models import ImageDiffRegion, ImageDiffResult, ImageInfo
-
 
 class ImageDiffMode(Enum):
     """Image comparison visualization modes."""
@@ -215,14 +217,22 @@ class ImageDiffEngine:
 
         left_img: Image.Image
         if left_exists:
-            left_img = Image.open(left_path)
+            try:
+                left_img = Image.open(left_path)
+            except (OSError, ValueError, PermissionError) as e:
+                logger.error(f"ImageDiffEngine - Failed to open left image '{left_path}': {e}", exc_info=True)
+                raise IOError(f"Cannot open image '{left_path}': {e}") from e
         else:
             # Create a small blank image if it doesn't exist
             left_img = Image.new('RGB', (1, 1), (0, 0, 0))
 
         right_img: Image.Image
         if right_exists:
-            right_img = Image.open(right_path)
+            try:
+                right_img = Image.open(right_path)
+            except (OSError, ValueError, PermissionError) as e:
+                logger.error(f"ImageDiffEngine - Failed to open right image '{right_path}': {e}", exc_info=True)
+                raise IOError(f"Cannot open image '{right_path}': {e}") from e
         else:
             # Create a small blank image if it doesn't exist
             right_img = Image.new('RGB', (1, 1), (0, 0, 0))
@@ -696,8 +706,8 @@ def check_image_support() -> dict:
         try:
             if fmt in Image.SAVE or fmt in Image.OPEN:
                 formats.append(fmt.lower())
-        except Exception:
-            pass
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.debug(f"Image format check failed for {fmt}: {e}")
 
     return {
         'available': True,

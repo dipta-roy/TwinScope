@@ -54,6 +54,8 @@ from app.ui.widgets.syntax_highlighter import (
     create_highlighter_for_file as get_highlighter_for_file,
 )
 
+from app.ui.widgets.update_dialog import UpdateDialog
+
 __all__ = [
     # Diff widgets
     'DiffTextEdit',
@@ -87,4 +89,7 @@ __all__ = [
     # Panels
     'CollapsiblePanel',
     'CollapsibleSection',
+
+    # Updates
+    'UpdateDialog',
 ]

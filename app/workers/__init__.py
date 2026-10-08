@@ -35,6 +35,11 @@ from app.workers.scan_worker import (
     BatchScanWorker,
     FolderScanWorker,
 )
+from app.workers.search_worker import (
+    CombinedSearchWorker,
+    SearchWorker,
+    SearchWorkerSignals,
+)
 from app.workers.sync_worker import (
     SyncPlanWorker,
     SyncWorker,
@@ -58,6 +63,10 @@ __all__ = [
     # Scan
     'FolderScanWorker',
     'BatchScanWorker',
+    # Search
+    'SearchWorker',
+    'SearchWorkerSignals',
+    'CombinedSearchWorker',
     # Sync
     'SyncWorker',
     'SyncPlanWorker',
